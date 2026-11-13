@@ -46,6 +46,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           cd daemon
+          go mod tidy
           go build -ldflags="-s -w" -o "proctoring-daemon-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" .
 
       - uses: actions/upload-artifact@v4
