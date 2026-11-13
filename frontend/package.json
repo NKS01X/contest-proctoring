@@ -1,0 +1,9 @@
+{
+  "name": "contest-proctoring-frontend",
+  "version": "1.0.0",
+  "description": "Frontend portal for Contest Proctoring System",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {}
+}

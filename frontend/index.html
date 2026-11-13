@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contest Proctoring - Link Session</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Contest Registration</h2>
+        <p class="text-gray-600 mb-6 text-sm text-center">Enter your Codeforces Handle and the session code provided by the desktop proctoring client to reveal the contest password.</p>
+        
+        <form id="linkForm" class="space-y-4">
+            <div>
+                <label for="cfHandle" class="block text-sm font-medium text-gray-700">Codeforces Handle</label>
+                <input type="text" id="cfHandle" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            
+            <div>
+                <label for="sessionCode" class="block text-sm font-medium text-gray-700">Desktop Session Code</label>
+                <input type="text" id="sessionCode" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. A1B2C">
+            </div>
+
+            <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Get Contest Password
+            </button>
+        </form>
+
+        <div id="resultBox" class="mt-6 hidden">
+            <!-- Dynamic content goes here -->
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('linkForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const cfHandle = document.getElementById('cfHandle').value;
+            const sessionCode = document.getElementById('sessionCode').value;
+            const resultBox = document.getElementById('resultBox');
+
+            resultBox.classList.remove('hidden');
+            resultBox.innerHTML = '<p class="text-gray-500 text-center text-sm">Verifying...</p>';
+
+            try {
+                const response = await fetch('http://localhost:8080/link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cf_handle: cfHandle, session_token: sessionCode })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultBox.innerHTML = `
+                        <div class="bg-green-50 border border-green-200 p-4 rounded-md text-center">
+                            <p class="text-sm text-green-800 font-semibold mb-2">Success! Your contest password is:</p>
+                            <div class="bg-white p-3 rounded border border-green-300 flex items-center justify-center space-x-2">
+                                <span class="text-2xl font-mono text-gray-900 tracking-wider font-bold" id="secretPassword">${data.password}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultBox.innerHTML = `
+                        <div class="bg-red-50 border border-red-200 p-4 rounded-md">
+                            <p class="text-sm text-red-800 text-center font-medium">${data.error || 'An error occurred.'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultBox.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 p-4 rounded-md">
+                        <p class="text-sm text-red-800 text-center font-medium">Failed to connect to backend server.</p>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
