@@ -9,7 +9,25 @@
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
     <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 text-center text-gray-800">Contest Registration</h2>
-        <p class="text-gray-600 mb-6 text-sm text-center">Enter your Codeforces Handle and the session code provided by your desktop proctoring client to reveal the contest password.</p>
+        <p class="text-gray-600 mb-5 text-sm text-center">Enter your Codeforces Handle and the session code provided by your desktop proctoring client to reveal the contest password.</p>
+
+        <!-- Daemon Download -->
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <h3 class="font-semibold text-blue-800 mb-3 text-sm">Step 1: Download &amp; Run the Proctoring Daemon</h3>
+            <div class="grid grid-cols-2 gap-2">
+                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/proctoring-daemon-linux-amd64"
+                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">Linux (x64)</a>
+                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/proctoring-daemon-linux-arm64"
+                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">Linux (ARM64)</a>
+                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/proctoring-daemon-darwin-amd64"
+                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">macOS (Intel)</a>
+                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/proctoring-daemon-darwin-arm64"
+                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">macOS (M1/M2)</a>
+                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/proctoring-daemon-windows-amd64.exe"
+                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium col-span-2">Windows (x64)</a>
+            </div>
+            <p class="text-xs text-blue-600 mt-2">Run the daemon, note the Session Token shown in the terminal, then fill the form below.</p>
+        </div>
         
         <form id="linkForm" class="space-y-4">
             <div>
@@ -33,7 +51,6 @@
     </div>
 
     <script>
-        // Automatically detect backend URL: if on localhost use local backend, else use production Render backend
         const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
             ? 'http://localhost:8080' 
             : 'https://contest-proctoring-backend.onrender.com';
