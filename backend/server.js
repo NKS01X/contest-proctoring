@@ -2,11 +2,13 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: '*'
+}));
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
-const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD || "SuperSecretPassword2026";
+const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD || "CodeforcesContest2026Secure";
 
 // In-memory store: session_token -> { lastSeen: Date, violations: Array }
 const activeSessions = new Map();
@@ -29,7 +31,6 @@ app.post('/heartbeat', (req, res) => {
     if (violations && violations.length > 0) {
         session.violations.push(...violations);
         console.log(`[VIOLATION] Token: ${session_token} | Count: ${violations.length}`);
-        // Here you would typically persist these to a database
     }
 
     res.status(200).send('OK');
@@ -52,20 +53,22 @@ app.post('/link', (req, res) => {
     const now = new Date();
     const diffSeconds = (now - session.lastSeen) / 1000;
 
-    if (diffSeconds > 30) {
+    if (diffSeconds > 35) { // slightly above 30s threshold
         return res.status(401).json({ error: 'Session not active (timeout). Please run the proctoring client.' });
     }
 
-    // Bind CF handle to session (just logging for this mock)
     session.cfHandle = cf_handle;
     console.log(`[LINK] CF Handle: ${cf_handle} paired with Session: ${session_token}`);
 
-    // Return the secret Codeforces password
     res.json({
         success: true,
         password: CONTEST_PASSWORD,
         message: 'Successfully paired.'
     });
+});
+
+app.get('/', (req, res) => {
+    res.send('Contest Proctoring Backend is running.');
 });
 
 app.listen(PORT, () => {

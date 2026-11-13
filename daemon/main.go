@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -36,10 +37,16 @@ func generateToken(length int) string {
 func main() {
 	sessionToken := generateToken(5)
 	
+	backendURL := os.Getenv("BACKEND_URL")
+	if backendURL == "" {
+		backendURL = "https://contest-proctoring-backend.onrender.com"
+	}
+	
 	// Print in bright cyan color
 	fmt.Printf("\033[1;36m==================================================\n")
 	fmt.Printf("Contest Proctoring Daemon Started\n")
 	fmt.Printf("Your Session Token: %s\n", sessionToken)
+	fmt.Printf("Target Backend: %s\n", backendURL)
 	fmt.Printf("DO NOT CLOSE THIS WINDOW DURING THE CONTEST\n")
 	fmt.Printf("==================================================\033[0m\n")
 
@@ -80,7 +87,7 @@ func main() {
 			continue
 		}
 
-		resp, err := client.Post("http://localhost:8080/heartbeat", "application/json", bytes.NewBuffer(data))
+		resp, err := client.Post(backendURL+"/heartbeat", "application/json", bytes.NewBuffer(data))
 		if err == nil {
 			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
 				// Success: remove sent violations
