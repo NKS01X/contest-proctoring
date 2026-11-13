@@ -68,9 +68,8 @@ func main() {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	for {
-		<-ticker.C
-
+	// First heartbeat fires immediately; later ones wait for the ticker.
+	for ; ; <-ticker.C {
 		bufferMutex.Lock()
 		currentViolations := make([]scanner.Violation, len(violations))
 		copy(currentViolations, violations)

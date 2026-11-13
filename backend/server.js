@@ -8,7 +8,12 @@ app.use(cors({
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
-const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD || "CodeforcesContest2026Secure";
+const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD;
+
+if (!CONTEST_PASSWORD) {
+    console.error('FATAL: CONTEST_PASSWORD environment variable is not set.');
+    process.exit(1);
+}
 
 // In-memory store: session_token -> { lastSeen: Date, violations: Array }
 const activeSessions = new Map();
@@ -28,9 +33,12 @@ app.post('/heartbeat', (req, res) => {
     const session = activeSessions.get(session_token);
     session.lastSeen = new Date();
     
-    if (violations && violations.length > 0) {
+    if (Array.isArray(violations) && violations.length > 0) {
         session.violations.push(...violations);
-        console.log(`[VIOLATION] Token: ${session_token} | Count: ${violations.length}`);
+        const who = session.cfHandle || 'unlinked';
+        for (const v of violations) {
+            console.log(`[VIOLATION] Token: ${session_token} | Handle: ${who} | Type: ${v.type} | Desc: ${v.description} | At: ${v.timestamp}`);
+        }
     }
 
     res.status(200).send('OK');
