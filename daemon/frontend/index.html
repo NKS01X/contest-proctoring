@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Contest Proctor</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px; user-select: none; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .card { background: #1a1d24; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .label { font-size: 12px; color: #8a8f99; margin-bottom: 6px; }
+  .token { font-size: 32px; font-weight: 700; letter-spacing: 4px; color: #2dd4ff; font-family: ui-monospace, monospace; user-select: text; }
+  .row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin: 4px 0; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #666; margin-right: 8px; }
+  .dot.on { background: #3ddc84; } .dot.off { background: #ff6b6b; }
+  input, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: inherit; font-size: 14px; }
+  button { background: #2dd4ff; color: #04202a; font-weight: 600; border: 0; cursor: pointer; margin-top: 8px; }
+  button.ghost { background: transparent; color: #2dd4ff; border: 1px solid #2dd4ff; margin-top: 10px; }
+  #msg { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .err { color: #ff6b6b; }
+  .pw { font-family: ui-monospace, monospace; font-size: 18px; color: #3ddc84; user-select: text; word-break: break-all; }
+  .note { font-size: 11px; color: #8a8f99; line-height: 1.5; }
+</style>
+</head>
+<body>
+<h1>Contest Proctor</h1>
+
+<div class="card">
+  <div class="label">Your session token</div>
+  <div class="token" id="token">-----</div>
+  <button class="ghost" id="copy">Copy token</button>
+</div>
+
+<div class="card">
+  <div class="row"><span><span class="dot" id="dot"></span><span id="status">Connecting...</span></span><span id="sync"></span></div>
+  <div class="row"><span>Events sent</span><span id="sent">0</span></div>
+  <div class="row"><span>Waiting to send</span><span id="pending">0</span></div>
+  <div class="row"><span>Flagged</span><span id="flagged">0</span></div>
+</div>
+
+<div class="card">
+  <div class="label">Codeforces handle</div>
+  <input id="handle" placeholder="tourist" autocomplete="off">
+  <button id="link">Get contest password</button>
+  <div id="msg"></div>
+</div>
+
+<div class="note">Keep this app open for the whole contest. Running processes and active window titles are recorded and sent to the contest host.</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const app = () => window.go && window.go.main && window.go.main.App;
+
+async function refresh() {
+  const a = app();
+  if (!a) return;
+  const s = await a.GetState();
+  $('token').textContent = s.token;
+  $('dot').className = 'dot ' + (s.online ? 'on' : 'off');
+  $('status').textContent = s.online ? 'Connected' : 'Offline (buffering)';
+  $('sync').textContent = s.lastSync ? 'last sync ' + s.lastSync : '';
+  $('sent').textContent = s.sent;
+  $('pending').textContent = s.pending;
+  $('flagged').textContent = s.flagged;
+}
+
+$('copy').onclick = () => app().CopyToken();
+
+$('link').onclick = async () => {
+  const msg = $('msg');
+  msg.className = '';
+  msg.textContent = 'Pairing...';
+  try {
+    const pw = await app().Link($('handle').value);
+    msg.textContent = '';
+    const span = document.createElement('span');
+    span.className = 'pw';
+    span.textContent = pw;
+    msg.append('Password: ', span);
+  } catch (e) {
+    msg.className = 'err';
+    msg.textContent = String(e);
+  }
+};
+
+setInterval(refresh, 1000);
+refresh();
+</script>
+</body>
+</html>

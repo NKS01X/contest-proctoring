@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Host Dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 20px; }
+  h2 { margin-top: 0; }
+  input, button { padding: 8px 12px; border-radius: 6px; border: 1px solid #333; background: #1a1d24; color: inherit; }
+  button { cursor: pointer; }
+  .cols { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #23262e; vertical-align: top; }
+  tbody tr.s { cursor: pointer; }
+  tbody tr.s:hover { background: #1a1d24; }
+  .on { color: #3ddc84; } .off { color: #666; }
+  tr.flagged td { color: #ff6b6b; }
+  .box { max-height: 75vh; overflow: auto; }
+  #err { color: #ff6b6b; margin-left: 10px; }
+  .desc { word-break: break-word; }
+</style>
+</head>
+<body>
+<h2>Contest Host Dashboard</h2>
+<div>
+  <input id="key" type="password" placeholder="Host key">
+  <button id="go">Connect</button>
+  <label style="margin-left:12px"><input id="onlyFlagged" type="checkbox"> flagged only</label>
+  <span id="err"></span>
+</div>
+<div class="cols">
+  <div class="box">
+    <table>
+      <thead><tr><th></th><th>Handle</th><th>Token</th><th>Events</th><th>Flags</th><th>Last seen</th></tr></thead>
+      <tbody id="sbody"></tbody>
+    </table>
+  </div>
+  <div class="box">
+    <table>
+      <thead><tr><th>Time</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody id="abody"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+let key = sessionStorage.getItem('hostKey') || '';
+let current = null;
+const $ = (id) => document.getElementById(id);
+
+async function api(path) {
+  const r = await fetch(path, { headers: { 'x-host-key': key } });
+  if (!r.ok) throw new Error(r.status === 401 ? 'wrong host key' : 'HTTP ' + r.status);
+  return r.json();
+}
+
+function cell(text, cls) {
+  const td = document.createElement('td');
+  td.textContent = text;
+  if (cls) td.className = cls;
+  return td;
+}
+
+async function loadSessions() {
+  if (!key) return;
+  try {
+    const rows = await api('/api/host/sessions');
+    const body = $('sbody');
+    body.replaceChildren();
+    for (const s of rows) {
+      const tr = document.createElement('tr');
+      tr.className = 's';
+      tr.onclick = () => { current = s.token; loadActivity(); };
+      tr.append(
+        cell(s.online ? '\u25cf' : '\u25cb', s.online ? 'on' : 'off'),
+        cell(s.cf_handle || '(unlinked)'),
+        cell(s.token),
+        cell(s.total),
+        cell(s.flagged, s.flagged ? 'flag' : ''),
+        cell(new Date(s.last_seen).toLocaleTimeString())
+      );
+      body.append(tr);
+    }
+    $('err').textContent = '';
+  } catch (e) {
+    $('err').textContent = e.message;
+  }
+}
+
+async function loadActivity() {
+  if (!key || !current) return;
+  try {
+    const only = $('onlyFlagged').checked ? '&flagged=1' : '';
+    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=300' + only);
+    const body = $('abody');
+    body.replaceChildren();
+    for (const a of rows) {
+      const tr = document.createElement('tr');
+      if (a.flagged) tr.className = 'flagged';
+      tr.append(cell(new Date(a.ts).toLocaleTimeString()), cell(a.type), cell(a.description, 'desc'));
+      body.append(tr);
+    }
+  } catch (e) {
+    $('err').textContent = e.message;
+  }
+}
+
+$('go').onclick = () => {
+  key = $('key').value;
+  sessionStorage.setItem('hostKey', key);
+  loadSessions();
+};
+$('onlyFlagged').onchange = loadActivity;
+setInterval(() => { loadSessions(); loadActivity(); }, 5000);
+loadSessions();
+</script>
+</body>
+</html>

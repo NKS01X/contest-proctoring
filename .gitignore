@@ -20,6 +20,14 @@ bin/
 dist/
 build/
 
+# Wails generated bindings
+daemon/frontend/wailsjs/
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
 # Environment variables
 .env
 .env.local
