@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: contest-proctoring-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CONTEST_PASSWORD
+        sync: false
+      - key: HOST_KEY
+        sync: false
