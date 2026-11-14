@@ -72,7 +72,7 @@
 <body>
 <header>
   <h1>Contest Proctor</h1>
-  <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting\u2026</span></span>
+  <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting&hellip;</span></span>
 </header>
 
 <div class="banner" id="banner" role="status" hidden></div>
@@ -109,8 +109,6 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const app = () => window.go && window.go.main && window.go.main.App;
-
-let connectedAs = '';
 
 async function refresh() {
   const a = app();
@@ -159,7 +157,6 @@ function setMsg(text, cls) {
 }
 
 function showConnected(handle) {
-  connectedAs = handle;
   $('handle').disabled = true;
   $('link').hidden = true;
   const msg = $('msg');
@@ -170,7 +167,6 @@ function showConnected(handle) {
   change.type = 'button';
   change.textContent = 'Change';
   change.onclick = () => {
-    connectedAs = '';
     $('handle').disabled = false;
     $('link').hidden = false;
     setMsg('');
