@@ -32,23 +32,22 @@
 <div class="cols">
   <div class="box">
     <table>
-      <thead><tr><th></th><th>Handle</th><th>Token</th><th>Events</th><th>Flags</th><th>Last seen</th></tr></thead>
+      <thead><tr><th></th><th>Handle</th><th>Token</th><th>Unique</th><th>Flags</th><th>Last seen</th></tr></thead>
       <tbody id="sbody"></tbody>
     </table>
   </div>
   <div class="box">
     <table>
-      <thead><tr><th>Time</th><th>Type</th><th>Description</th></tr></thead>
+      <thead><tr><th>First</th><th>Last</th><th>Type</th><th>Description</th><th>&times;</th></tr></thead>
       <tbody id="abody"></tbody>
     </table>
   </div>
 </div>
 <script>
 const POLL_MS = 10000;
-const MAX_ROWS = 1000;
 let key = sessionStorage.getItem('hostKey') || '';
 let current = null;
-let acts = [];
+let acts = new Map();
 let lastSeq = 0;
 const $ = (id) => document.getElementById(id);
 
@@ -94,24 +93,31 @@ async function loadSessions() {
 function renderActivity() {
   const body = $('abody');
   body.replaceChildren();
-  for (const a of acts) {
+  const rows = [...acts.values()].sort((a, b) => b.seq - a.seq);
+  for (const a of rows) {
     const tr = document.createElement('tr');
     if (a.flagged) tr.className = 'flagged';
-    tr.append(cell(new Date(a.ts).toLocaleTimeString()), cell(a.type), cell(a.description, 'desc'));
+    tr.append(
+      cell(new Date(a.first_ts).toLocaleTimeString()),
+      cell(new Date(a.ts).toLocaleTimeString()),
+      cell(a.type),
+      cell(a.description, 'desc'),
+      cell(a.cnt)
+    );
     body.append(tr);
   }
 }
 
-// Only fetches rows newer than lastSeq; reset=true reloads from scratch.
+// Fetches only events seen again since lastSeq; reset=true reloads from scratch.
 async function loadActivity(reset) {
   if (!key || !current) return;
-  if (reset) { acts = []; lastSeq = 0; }
+  if (reset) { acts = new Map(); lastSeq = 0; }
   try {
     const only = $('onlyFlagged').checked ? '&flagged=1' : '';
-    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=300&after=' + lastSeq + only);
-    if (rows.length) {
-      lastSeq = rows[0].seq;
-      acts = rows.concat(acts).slice(0, MAX_ROWS);
+    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=1000&after=' + lastSeq + only);
+    for (const r of rows) {
+      acts.set(r.k, r);
+      if (r.seq > lastSeq) lastSeq = r.seq;
     }
     if (rows.length || reset) renderActivity();
   } catch (e) {
