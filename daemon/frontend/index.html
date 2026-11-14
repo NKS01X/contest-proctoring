@@ -2,50 +2,109 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Contest Proctor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg: #eef1f5; --surface: #ffffff; --surface2: #f5f7fa; --line: #d8dee8;
+    --ink: #17202e; --muted: #596579; --blue: #1f5fbf; --on-blue: #ffffff;
+    --green: #17865a; --red: #c4362c; --amber: #9a6208;
+    --red-bg: #fdeceb; --green-bg: #e8f5ee; --amber-bg: #fbf1de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d121a; --surface: #141b26; --surface2: #19212e; --line: #263140;
+      --ink: #e6ebf2; --muted: #94a1b4; --blue: #6aa2f2; --on-blue: #0a1220;
+      --green: #4cc38a; --red: #ff7f72; --amber: #e3ae52;
+      --red-bg: #2b1a1c; --green-bg: #12261d; --amber-bg: #2a2214;
+    }
+  }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px; user-select: none; }
-  h1 { font-size: 18px; margin: 0 0 16px; }
-  .card { background: #1a1d24; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
-  .label { font-size: 12px; color: #8a8f99; margin-bottom: 6px; }
-  .token { font-size: 32px; font-weight: 700; letter-spacing: 4px; color: #2dd4ff; font-family: ui-monospace, monospace; user-select: text; }
-  .row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin: 4px 0; }
-  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #666; margin-right: 8px; }
-  .dot.on { background: #3ddc84; } .dot.off { background: #ff6b6b; }
-  input, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: inherit; font-size: 14px; }
-  button { background: #2dd4ff; color: #04202a; font-weight: 600; border: 0; cursor: pointer; margin-top: 8px; }
-  button.ghost { background: transparent; color: #2dd4ff; border: 1px solid #2dd4ff; margin-top: 10px; }
-  #msg { font-size: 13px; margin-top: 8px; min-height: 18px; }
-  .err { color: #ff6b6b; }
-  .pw { font-family: ui-monospace, monospace; font-size: 18px; color: #3ddc84; user-select: text; word-break: break-all; }
-  .note { font-size: 11px; color: #8a8f99; line-height: 1.5; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; padding: 18px; background: var(--bg); color: var(--ink); font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif; user-select: none; -webkit-user-select: none; overflow-y: auto; }
+  h1, h2, p { margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  h1 { font-size: 17px; font-weight: 600; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--amber); }
+  .status.on .dot { background: var(--green); }
+  .status.off .dot { background: var(--red); }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .label { font-size: 13px; color: var(--muted); }
+  .token-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+  .token { font-size: 34px; font-weight: 500; letter-spacing: .14em; color: var(--blue); user-select: text; -webkit-user-select: text; line-height: 1.2; }
+  .help { color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+  .btn { font: inherit; font-weight: 500; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .btn:hover:not(:disabled) { border-color: var(--muted); }
+  .btn:disabled { opacity: .6; cursor: progress; }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: var(--on-blue); }
+  .field { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); width: 100%; min-width: 0; user-select: text; -webkit-user-select: text; }
+  .field::placeholder { color: var(--muted); opacity: .7; }
+  .field:disabled { background: var(--surface2); color: var(--muted); }
+
+  .connect { display: grid; gap: 8px; }
+  .connect .row { display: flex; gap: 8px; }
+  #msg { font-size: 13px; min-height: 18px; }
+  #msg.err { color: var(--red); }
+  #msg.ok { color: var(--green); font-weight: 500; }
+  .linkbtn { font: inherit; font-size: 13px; background: none; border: 0; padding: 0; color: var(--blue); text-decoration: underline; cursor: pointer; margin-left: 6px; }
+
+  .banner { border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; font-size: 13px; border: 1px solid var(--amber); background: var(--amber-bg); color: var(--amber); }
+  .banner.off { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+  .stat b { display: block; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .sync { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.5; padding: 0 2px; }
 </style>
 </head>
 <body>
-<h1>Contest Proctor</h1>
+<header>
+  <h1>Contest Proctor</h1>
+  <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting&hellip;</span></span>
+</header>
 
-<div class="card">
-  <div class="label">Your session token</div>
-  <div class="token" id="token">-----</div>
-  <button class="ghost" id="copy">Copy token</button>
-</div>
+<div class="banner" id="banner" role="status" hidden></div>
 
-<div class="card">
-  <div class="row"><span><span class="dot" id="dot"></span><span id="status">Connecting...</span></span><span id="sync"></span></div>
-  <div class="row"><span>Events sent</span><span id="sent">0</span></div>
-  <div class="row"><span>Waiting to send</span><span id="pending">0</span></div>
-  <div class="row"><span>Flagged</span><span id="flagged">0</span></div>
-</div>
+<section class="panel" aria-label="Session code">
+  <div class="label">Session code</div>
+  <div class="token-row">
+    <div class="token mono" id="token">-----</div>
+    <button class="btn" id="copy" type="button">Copy</button>
+  </div>
+  <p class="help">The contest page asks for this code to link you to this session.</p>
+</section>
 
-<div class="card">
-  <div class="label">Codeforces handle</div>
-  <input id="handle" placeholder="tourist" autocomplete="off">
-  <button id="link">Get contest password</button>
-  <div id="msg"></div>
-</div>
+<section class="panel connect" aria-label="Connect handle">
+  <label class="label" for="handle">Codeforces handle</label>
+  <div class="row">
+    <input id="handle" class="field" placeholder="tourist" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="link" class="btn primary" type="button">Connect</button>
+  </div>
+  <p id="msg" role="status" aria-live="polite"></p>
+</section>
 
-<div class="note">Keep this app open for the whole contest. Running processes and active window titles are recorded and sent to the contest host.</div>
+<section class="panel" aria-label="Activity">
+  <div class="stats">
+    <div class="stat"><b id="sent">0</b><span>Events sent</span></div>
+    <div class="stat"><b id="pending">0</b><span>Waiting to send</span></div>
+    <div class="stat"><b id="flagged">0</b><span>Flagged</span></div>
+  </div>
+  <p class="sync" id="sync"></p>
+</section>
+
+<p class="note">Keep this app open for the whole contest. Running processes and active window titles are recorded and sent to the contest host.</p>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -56,32 +115,89 @@ async function refresh() {
   if (!a) return;
   const s = await a.GetState();
   $('token').textContent = s.token;
-  $('dot').className = 'dot ' + (s.online ? 'on' : 'off');
-  $('status').textContent = s.online ? 'Connected' : 'Offline (buffering)';
-  $('sync').textContent = s.lastSync ? 'last sync ' + s.lastSync : '';
+
+  const connecting = !s.online && !s.lastSync;
+  $('status').className = 'status ' + (s.online ? 'on' : connecting ? '' : 'off');
+  $('statusText').textContent = s.online ? 'Online' : connecting ? 'Connecting\u2026' : 'Offline';
+
+  const banner = $('banner');
+  if (s.online) {
+    banner.hidden = true;
+  } else if (connecting) {
+    banner.hidden = false;
+    banner.className = 'banner';
+    banner.textContent = 'Reaching the contest server. This can take up to a minute the first time.';
+  } else {
+    banner.hidden = false;
+    banner.className = 'banner off';
+    banner.textContent = 'Cannot reach the server. Your activity is saved and will be sent when the connection returns. Keep the app open.';
+  }
+
   $('sent').textContent = s.sent;
   $('pending').textContent = s.pending;
   $('flagged').textContent = s.flagged;
+  $('sync').textContent = s.lastSync ? 'Last sync ' + s.lastSync : '';
 }
 
-$('copy').onclick = () => app().CopyToken();
-
-$('link').onclick = async () => {
-  const msg = $('msg');
-  msg.className = '';
-  msg.textContent = 'Pairing...';
+$('copy').onclick = async () => {
+  const btn = $('copy');
   try {
-    const pw = await app().Link($('handle').value);
-    msg.textContent = '';
-    const span = document.createElement('span');
-    span.className = 'pw';
-    span.textContent = pw;
-    msg.append('Password: ', span);
+    await app().CopyToken();
+    btn.textContent = 'Copied';
   } catch (e) {
-    msg.className = 'err';
-    msg.textContent = String(e);
+    btn.textContent = 'Copy failed';
   }
+  setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
 };
+
+function setMsg(text, cls) {
+  const msg = $('msg');
+  msg.className = cls || '';
+  msg.textContent = text || '';
+}
+
+function showConnected(handle) {
+  $('handle').disabled = true;
+  $('link').hidden = true;
+  const msg = $('msg');
+  msg.className = 'ok';
+  msg.textContent = 'Connected as ' + handle + '.';
+  const change = document.createElement('button');
+  change.className = 'linkbtn';
+  change.type = 'button';
+  change.textContent = 'Change';
+  change.onclick = () => {
+    $('handle').disabled = false;
+    $('link').hidden = false;
+    setMsg('');
+    $('handle').focus();
+    $('handle').select();
+  };
+  msg.append(change);
+}
+
+async function connect() {
+  const btn = $('link');
+  const handle = $('handle').value.trim();
+  if (!handle) { setMsg('Enter your Codeforces handle.', 'err'); $('handle').focus(); return; }
+  btn.disabled = true;
+  btn.textContent = 'Connecting\u2026';
+  setMsg('');
+  try {
+    await app().Link(handle);
+    localStorage.setItem('cfHandle', handle);
+    showConnected(handle);
+  } catch (e) {
+    setMsg(String(e).replace(/^Error:\s*/, ''), 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+  }
+}
+
+$('link').onclick = connect;
+$('handle').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+$('handle').value = localStorage.getItem('cfHandle') || '';
 
 setInterval(refresh, 1000);
 refresh();

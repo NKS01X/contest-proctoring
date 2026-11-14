@@ -1,122 +1,246 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contest Proctoring - Link Session</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Contest registration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef1f5; --surface: #ffffff; --surface2: #f5f7fa; --line: #d8dee8;
+    --ink: #17202e; --muted: #596579; --blue: #1f5fbf; --on-blue: #ffffff;
+    --green: #17865a; --red: #c4362c; --red-bg: #fdeceb; --green-bg: #e8f5ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d121a; --surface: #141b26; --surface2: #19212e; --line: #263140;
+      --ink: #e6ebf2; --muted: #94a1b4; --blue: #6aa2f2; --on-blue: #0a1220;
+      --green: #4cc38a; --red: #ff7f72; --red-bg: #2b1a1c; --green-bg: #12261d;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  h1, h2, p { margin: 0; }
+
+  .wrap { max-width: 540px; margin: 0 auto; padding: 40px 20px 56px; }
+  h1 { font-size: 26px; font-weight: 600; line-height: 1.25; }
+  .lead { color: var(--muted); margin-top: 8px; }
+
+  .steps { list-style: none; margin: 32px 0 0; padding: 0; }
+  .step { position: relative; padding: 0 0 28px 44px; }
+  .step::before { content: ""; position: absolute; left: 13px; top: 30px; bottom: 2px; width: 2px; background: var(--line); }
+  .step:last-child { padding-bottom: 0; }
+  .step:last-child::before { display: none; }
+  .num { position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: var(--on-blue); font-weight: 600; font-size: 14px; display: grid; place-items: center; }
+  .step h2 { font-size: 17px; font-weight: 600; line-height: 28px; }
+  .step .hint { color: var(--muted); margin-top: 2px; }
+  .body { margin-top: 14px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; font: inherit; font-weight: 500; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; cursor: pointer; }
+  .btn:hover:not(:disabled) { border-color: var(--muted); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: var(--on-blue); }
+  .btn:disabled { opacity: .6; cursor: progress; }
+  .btn.block { width: 100%; }
+
+  details { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  summary { cursor: pointer; padding: 10px 14px; font-weight: 500; }
+  .dl { padding: 4px 14px 14px; display: grid; gap: 14px; }
+  .dl h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+  .dl .sub { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .links a { font-size: 13px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--blue); text-decoration: none; background: var(--surface2); }
+  .links a:hover { border-color: var(--blue); }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; background: var(--surface2); padding: 1px 5px; border-radius: 4px; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .mobile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; color: var(--muted); }
+
+  form { display: grid; gap: 16px; }
+  label { display: grid; gap: 6px; font-weight: 500; }
+  .field { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); width: 100%; }
+  .field::placeholder { color: var(--muted); opacity: .7; }
+  .code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 26px; letter-spacing: .35em; text-align: center; padding: 12px; font-weight: 500; }
+  .help { font-weight: 400; color: var(--muted); font-size: 13px; }
+
+  #status { min-height: 22px; font-size: 14px; color: var(--muted); }
+  #status.err { color: var(--red); background: var(--red-bg); border: 1px solid var(--red); border-radius: 8px; padding: 10px 12px; }
+  .done { background: var(--green-bg); border: 1px solid var(--green); border-radius: 10px; padding: 16px; display: grid; gap: 6px; }
+  .done h3 { margin: 0; font-size: 17px; font-weight: 600; color: var(--green); }
+  .linkbtn { font: inherit; background: none; border: 0; padding: 0; color: var(--blue); text-decoration: underline; cursor: pointer; justify-self: start; margin-top: 6px; }
+</style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
-    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-2 text-center text-gray-800">Contest Registration</h2>
-        <p class="text-gray-600 mb-5 text-sm text-center">Enter your Codeforces Handle and the session code provided by your desktop proctoring client to reveal the contest password.</p>
+<body>
+<main class="wrap">
+  <header>
+    <h1>Contest registration</h1>
+    <p class="lead">Install the proctoring app, then connect your Codeforces handle to it. Keep the app open until the contest ends.</p>
+  </header>
 
-        <!-- App Download -->
-        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <h3 class="font-semibold text-blue-800 mb-3 text-sm">Step 1: Download &amp; Run the Proctoring App</h3>
-            <div class="grid grid-cols-1 gap-2">
-                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-windows-amd64.exe"
-                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">Windows (x64)</a>
-                <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-macos-universal.zip"
-                   class="text-center py-2 px-3 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">macOS (Intel &amp; Apple Silicon)</a>
-            </div>
+  <ol class="steps">
+    <li class="step">
+      <span class="num" aria-hidden="true">1</span>
+      <h2>Install the proctoring app</h2>
+      <p class="hint">Open it afterwards and note the 5-character session code it shows.</p>
+      <div class="body" id="download"></div>
+    </li>
 
-            <div class="mt-3 pt-3 border-t border-blue-200">
-                <p class="text-xs font-semibold text-blue-800 mb-2">Linux (x64) &mdash; pick the build for your distro</p>
-                <p class="text-xs text-blue-700 mb-1">Ubuntu 24.04+, Debian 13, Fedora 40+ <span class="text-blue-500">(webkit2gtk 4.1)</span></p>
-                <div class="grid grid-cols-3 gap-2 mb-3">
-                    <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-linux-amd64-webkit41.deb"
-                       class="text-center py-2 px-2 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">.deb</a>
-                    <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-linux-amd64-webkit41.rpm"
-                       class="text-center py-2 px-2 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">.rpm</a>
-                    <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-linux-amd64-webkit41.tar.gz"
-                       class="text-center py-2 px-2 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">.tar.gz</a>
-                </div>
-                <p class="text-xs text-blue-700 mb-1">Ubuntu 20.04/22.04, Debian 11/12, Fedora &le; 39 <span class="text-blue-500">(webkit2gtk 4.0)</span></p>
-                <div class="grid grid-cols-3 gap-2">
-                    <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-linux-amd64-webkit40.deb"
-                       class="text-center py-2 px-2 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">.deb</a>
-                    <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-linux-amd64-webkit40.rpm"
-                       class="text-center py-2 px-2 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">.rpm</a>
-                    <a href="https://github.com/NKS01X/contest-proctoring/releases/latest/download/contest-proctor-linux-amd64-webkit40.tar.gz"
-                       class="text-center py-2 px-2 bg-white border border-blue-300 rounded text-xs text-blue-700 hover:bg-blue-100 font-medium">.tar.gz</a>
-                </div>
-                <p class="text-xs text-blue-600 mt-2">Install: <code>sudo apt install ./file.deb</code> or <code>sudo dnf install ./file.rpm</code>, then run <code>contest-proctor</code>.</p>
-            </div>
-
-            <p class="text-xs text-blue-600 mt-2">Open the app, note the Session Token it shows, then fill the form below.</p>
-        </div>
-        
-        <form id="linkForm" class="space-y-4">
-            <div>
-                <label for="cfHandle" class="block text-sm font-medium text-gray-700">Codeforces Handle</label>
-                <input type="text" id="cfHandle" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. tourist">
-            </div>
-            
-            <div>
-                <label for="sessionCode" class="block text-sm font-medium text-gray-700">Desktop Session Code</label>
-                <input type="text" id="sessionCode" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. A1B2C">
-            </div>
-
-            <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                Get Contest Password
-            </button>
+    <li class="step">
+      <span class="num" aria-hidden="true">2</span>
+      <h2>Connect your handle</h2>
+      <div class="body">
+        <form id="linkForm" novalidate>
+          <label for="cfHandle">Codeforces handle
+            <input class="field" type="text" id="cfHandle" required autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="tourist">
+          </label>
+          <label for="sessionCode">Session code
+            <input class="field code" type="text" id="sessionCode" required maxlength="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="a1B2c" aria-describedby="codeHelp">
+            <span class="help" id="codeHelp">Shown at the top of the app. Letters are case-sensitive.</span>
+          </label>
+          <button class="btn primary block" type="submit" id="connectBtn">Connect</button>
+          <p id="status" role="status" aria-live="polite"></p>
         </form>
 
-        <div id="resultBox" class="mt-6 hidden">
-            <!-- Dynamic content goes here -->
+        <div class="done" id="done" hidden>
+          <h3 id="doneTitle"></h3>
+          <p>Your session is linked. Leave the proctoring app running until the contest ends.</p>
+          <button class="linkbtn" type="button" id="again">Use a different handle or code</button>
         </div>
-    </div>
+      </div>
+    </li>
+  </ol>
+</main>
 
-    <script>
-        const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-            ? 'http://localhost:8080' 
-            : 'https://contest-proctoring-backend.onrender.com';
+<script>
+const BACKEND_URL = ['localhost', '127.0.0.1'].includes(location.hostname)
+  ? 'http://localhost:8080'
+  : 'https://contest-proctoring-backend.onrender.com';
+const BASE = 'https://github.com/NKS01X/contest-proctoring/releases/latest/download/';
+const $ = (id) => document.getElementById(id);
 
-        document.getElementById('linkForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const cfHandle = document.getElementById('cfHandle').value.trim();
-            const sessionCode = document.getElementById('sessionCode').value.trim();
-            const resultBox = document.getElementById('resultBox');
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null) e.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return e;
+}
 
-            resultBox.classList.remove('hidden');
-            resultBox.innerHTML = '<p class="text-gray-500 text-center text-sm">Verifying active proctoring session...</p>';
+/* ---------- step 1: downloads ---------- */
+const ua = navigator.userAgent;
+const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+let os = 'other';
+if (/iPhone|iPad|Android/i.test(ua)) os = 'mobile';
+else if (/Win/i.test(plat) || /Windows/i.test(ua)) os = 'windows';
+else if (/Mac/i.test(plat) || /Macintosh/i.test(ua)) os = 'mac';
+else if (/Linux|X11/i.test(plat + ua)) os = 'linux';
 
-            try {
-                const response = await fetch(`${BACKEND_URL}/link`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cf_handle: cfHandle, session_token: sessionCode })
-                });
+const WIN = { label: 'Windows (64-bit)', file: 'contest-proctor-windows-amd64.exe' };
+const MAC = { label: 'macOS (Intel and Apple silicon)', file: 'contest-proctor-macos-universal.zip' };
+const LINUX = [
+  { label: 'Ubuntu 24.04+, Debian 13, Fedora 40+', variant: 'webkit41' },
+  { label: 'Ubuntu 20.04 or 22.04, Debian 11 or 12, Fedora 39 and older', variant: 'webkit40' },
+];
 
-                const data = await response.json();
+function linuxBlock() {
+  return h('div', { class: 'dl' },
+    LINUX.map((d) => h('div', {},
+      h('h3', { text: d.label }),
+      h('div', { class: 'links' }, ['deb', 'rpm', 'tar.gz'].map((ext) =>
+        h('a', { href: BASE + 'contest-proctor-linux-amd64-' + d.variant + '.' + ext, text: '.' + ext }))))),
+    h('p', { class: 'note' }, 'Install with ', h('code', { text: 'sudo apt install ./file.deb' }),
+      ' or ', h('code', { text: 'sudo dnf install ./file.rpm' }), ', then run ', h('code', { text: 'contest-proctor' }), '.'));
+}
 
-                if (response.ok) {
-                    resultBox.innerHTML = `
-                        <div class="bg-green-50 border border-green-200 p-4 rounded-md text-center">
-                            <p class="text-sm text-green-800 font-semibold mb-2">Success! Your contest password is:</p>
-                            <div class="bg-white p-3 rounded border border-green-300 flex items-center justify-center space-x-2">
-                                <span class="text-xl font-mono text-gray-900 tracking-wider font-bold select-all">${data.password}</span>
-                            </div>
-                            <p class="text-xs text-green-600 mt-2">Keep the proctoring app running throughout the contest.</p>
-                        </div>
-                    `;
-                } else {
-                    resultBox.innerHTML = `
-                        <div class="bg-red-50 border border-red-200 p-4 rounded-md">
-                            <p class="text-sm text-red-800 text-center font-medium">${data.error || 'Verification failed.'}</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                resultBox.innerHTML = `
-                    <div class="bg-red-50 border border-red-200 p-4 rounded-md">
-                        <p class="text-sm text-red-800 text-center font-medium">Failed to connect to backend server. Ensure backend is active.</p>
-                    </div>
-                `;
-            }
-        });
-    </script>
+function renderDownload() {
+  const box = $('download');
+  if (os === 'mobile') {
+    box.append(h('p', { class: 'mobile', text: 'The proctoring app runs on a computer. Open this page on the computer you will use for the contest.' }));
+    return;
+  }
+  if (os === 'windows' || os === 'mac') {
+    const p = os === 'windows' ? WIN : MAC;
+    box.append(h('a', { class: 'btn primary', href: BASE + p.file, text: 'Download for ' + (os === 'windows' ? 'Windows' : 'macOS') }));
+  }
+  const other = h('details', { open: os === 'linux' || os === 'other' },
+    h('summary', { text: os === 'linux' ? 'Choose the build for your Linux distribution' : 'Other platforms' }),
+    h('div', { class: 'dl' },
+      os !== 'windows' ? h('div', {}, h('h3', { text: 'Windows' }), h('div', { class: 'links' }, h('a', { href: BASE + WIN.file, text: WIN.label }))) : null,
+      os !== 'mac' ? h('div', {}, h('h3', { text: 'macOS' }), h('div', { class: 'links' }, h('a', { href: BASE + MAC.file, text: MAC.label }))) : null,
+      h('div', {}, h('h3', { text: 'Linux (64-bit)' }))),
+    linuxBlock());
+  box.append(other);
+}
+renderDownload();
+
+/* ---------- step 2: connect ---------- */
+const form = $('linkForm');
+const status = $('status');
+const btn = $('connectBtn');
+
+$('cfHandle').value = localStorage.getItem('cfHandle') || '';
+
+function setStatus(text, err) {
+  status.textContent = text || '';
+  status.className = err ? 'err' : '';
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const cfHandle = $('cfHandle').value.trim();
+  const sessionCode = $('sessionCode').value.trim();
+  if (!cfHandle) { setStatus('Enter your Codeforces handle.', true); $('cfHandle').focus(); return; }
+  if (!sessionCode) { setStatus('Enter the session code shown in the proctoring app.', true); $('sessionCode').focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Connecting\u2026';
+  setStatus('');
+  const slow = setTimeout(() => setStatus('Still trying. The server sleeps when idle and can take up to a minute to wake up.'), 4000);
+  const ctrl = new AbortController();
+  const abort = setTimeout(() => ctrl.abort(), 65000);
+
+  try {
+    const res = await fetch(BACKEND_URL + '/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cf_handle: cfHandle, session_token: sessionCode }),
+      signal: ctrl.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      localStorage.setItem('cfHandle', cfHandle);
+      form.hidden = true;
+      $('doneTitle').textContent = 'Connected as ' + cfHandle;
+      $('done').hidden = false;
+      return;
+    }
+    setStatus((data.error || 'Could not connect.') + ' Check the code in the app, and make sure the app is still open.', true);
+  } catch (err) {
+    setStatus(err.name === 'AbortError'
+      ? 'The server did not answer in time. Try again in a minute.'
+      : 'Could not reach the server. Check your connection and try again.', true);
+  } finally {
+    clearTimeout(slow);
+    clearTimeout(abort);
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+  }
+});
+
+$('again').onclick = () => {
+  $('done').hidden = true;
+  form.hidden = false;
+  setStatus('');
+  $('sessionCode').focus();
+};
+</script>
 </body>
 </html>

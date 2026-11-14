@@ -10,8 +10,6 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: CONTEST_PASSWORD
-        sync: false
       - key: HOST_KEY
         sync: false
       # auto-prune events not seen again for N hours (0 = off)
