@@ -18,7 +18,7 @@
   button.ghost { background: transparent; color: #2dd4ff; border: 1px solid #2dd4ff; margin-top: 10px; }
   #msg { font-size: 13px; margin-top: 8px; min-height: 18px; }
   .err { color: #ff6b6b; }
-  .pw { font-family: ui-monospace, monospace; font-size: 18px; color: #3ddc84; user-select: text; word-break: break-all; }
+  .ok { color: #3ddc84; }
   .note { font-size: 11px; color: #8a8f99; line-height: 1.5; }
 </style>
 </head>
@@ -41,7 +41,7 @@
 <div class="card">
   <div class="label">Codeforces handle</div>
   <input id="handle" placeholder="tourist" autocomplete="off">
-  <button id="link">Get contest password</button>
+  <button id="link">Connect</button>
   <div id="msg"></div>
 </div>
 
@@ -68,20 +68,20 @@ $('copy').onclick = () => app().CopyToken();
 
 $('link').onclick = async () => {
   const msg = $('msg');
+  const handle = $('handle').value.trim();
   msg.className = '';
-  msg.textContent = 'Pairing...';
+  msg.textContent = 'Connecting...';
   try {
-    const pw = await app().Link($('handle').value);
-    msg.textContent = '';
-    const span = document.createElement('span');
-    span.className = 'pw';
-    span.textContent = pw;
-    msg.append('Password: ', span);
+    await app().Link(handle);
+    msg.className = 'ok';
+    msg.textContent = 'Connected as ' + handle + '. Keep this app open during the contest.';
   } catch (e) {
     msg.className = 'err';
     msg.textContent = String(e);
   }
 };
+
+$('handle').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('link').click(); });
 
 setInterval(refresh, 1000);
 refresh();
