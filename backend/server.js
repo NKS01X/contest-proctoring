@@ -10,6 +10,10 @@ const PORT = process.env.PORT || 8080;
 const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD;
 const HOST_KEY = process.env.HOST_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
+// Optional auto-prune: delete events not seen again for this many hours (0 = off).
+const RETENTION_HOURS = parseFloat(process.env.RETENTION_HOURS) || 0;
+const PRUNE_KEEP_FLAGGED = process.env.PRUNE_KEEP_FLAGGED !== '0';
+const PRUNE_EVERY_MS = 10 * 60 * 1000;
 
 const ONLINE_MS = 35000;
 const MAX_BATCH = 1000;
@@ -72,6 +76,7 @@ async function initDb() {
             PRIMARY KEY (token, type, sid)
         );
         CREATE INDEX IF NOT EXISTS idx_uevents_token_last ON proctor.uevents (token, last_ts);
+        CREATE INDEX IF NOT EXISTS idx_uevents_last ON proctor.uevents (last_ts);
     `);
 }
 
@@ -195,6 +200,34 @@ async function ingest(token, items, now) {
     }
 }
 
+// Deletes unique events whose last_ts is before beforeTs (optionally one session, optionally keeping
+// flagged ones) and fixes the per-session counters. Returns the number of rows deleted.
+async function prune({ token = null, beforeTs, keepFlagged = true }) {
+    const params = [beforeTs];
+    let where = 'last_ts < $1';
+    if (token) {
+        params.push(token);
+        where += ` AND token = $${params.length}`;
+    }
+    if (keepFlagged) where += ' AND flagged = 0';
+
+    const { rows } = await pool.query(
+        `WITH del AS (DELETE FROM proctor.uevents WHERE ${where} RETURNING token)
+         SELECT token, COUNT(*)::int AS n FROM del GROUP BY token`,
+        params
+    );
+    if (!rows.length) return 0;
+
+    await pool.query(
+        `UPDATE proctor.sessions s SET
+             total   = (SELECT COUNT(*) FROM proctor.uevents e WHERE e.token = s.token),
+             flagged = (SELECT COALESCE(SUM(e.flagged), 0) FROM proctor.uevents e WHERE e.token = s.token)
+         WHERE s.token = ANY($1::text[])`,
+        [rows.map((r) => r.token)]
+    );
+    return rows.reduce((s, r) => s + r.n, 0);
+}
+
 const wrap = (fn) => (req, res) =>
     fn(req, res).catch((err) => {
         console.error(err);
@@ -272,6 +305,45 @@ app.get('/api/host/sessions/:token/activity', requireHost, wrap(async (req, res)
     res.json(rows.map((r) => ({ ...r, type: TYPE_NAMES[r.type] || 'unknown' })));
 }));
 
+// Delete a session and all its events.
+app.delete('/api/host/sessions/:token', requireHost, wrap(async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const ev = await client.query('DELETE FROM proctor.uevents WHERE token = $1', [req.params.token]);
+        const se = await client.query('DELETE FROM proctor.sessions WHERE token = $1', [req.params.token]);
+        await client.query('COMMIT');
+        res.json({ deleted_events: ev.rowCount, deleted_sessions: se.rowCount });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+    } finally {
+        client.release();
+    }
+}));
+
+// Delete events of one session not seen again for ?older_than_min=N minutes (0 = all).
+// Flagged events are kept unless ?keep_flagged=0.
+app.delete('/api/host/sessions/:token/activity', requireHost, wrap(async (req, res) => {
+    const mins = Math.max(parseFloat(req.query.older_than_min) || 0, 0);
+    const deleted = await prune({
+        token: req.params.token,
+        beforeTs: Date.now() - mins * 60000,
+        keepFlagged: req.query.keep_flagged !== '0',
+    });
+    res.json({ deleted_events: deleted });
+}));
+
+// Same as above across all sessions.
+app.delete('/api/host/activity', requireHost, wrap(async (req, res) => {
+    const mins = Math.max(parseFloat(req.query.older_than_min) || 0, 0);
+    const deleted = await prune({
+        beforeTs: Date.now() - mins * 60000,
+        keepFlagged: req.query.keep_flagged !== '0',
+    });
+    res.json({ deleted_events: deleted });
+}));
+
 app.get('/host', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'host.html'));
 });
@@ -281,7 +353,16 @@ app.get('/', (req, res) => {
 });
 
 initDb()
-    .then(() => app.listen(PORT, () => console.log(`Backend gateway listening on port ${PORT}`)))
+    .then(() => {
+        app.listen(PORT, () => console.log(`Backend gateway listening on port ${PORT}`));
+        if (RETENTION_HOURS > 0) {
+            const run = () =>
+                prune({ beforeTs: Date.now() - RETENTION_HOURS * 3600000, keepFlagged: PRUNE_KEEP_FLAGGED })
+                    .then((n) => n && console.log(`[PRUNE] removed ${n} event(s)`))
+                    .catch((err) => console.error('prune failed:', err.message));
+            setInterval(run, PRUNE_EVERY_MS).unref();
+        }
+    })
     .catch((err) => {
         console.error('FATAL: database init failed:', err.message);
         process.exit(1);
