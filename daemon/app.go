@@ -205,33 +205,32 @@ func (a *App) CopyToken() {
 	_ = runtime.ClipboardSetText(a.ctx, a.token)
 }
 
-// Link pairs the Codeforces handle with this session and returns the contest password.
-func (a *App) Link(handle string) (string, error) {
+// Link connects the Codeforces handle to this session.
+func (a *App) Link(handle string) error {
 	handle = strings.TrimSpace(handle)
 	if handle == "" {
-		return "", errors.New("enter your Codeforces handle")
+		return errors.New("enter your Codeforces handle")
 	}
 
 	body, _ := json.Marshal(map[string]string{"cf_handle": handle, "session_token": a.token})
 	resp, err := a.client.Post(a.backend+"/link", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", errors.New("cannot reach the server")
+		return errors.New("cannot reach the server")
 	}
 	defer resp.Body.Close()
 
 	var out struct {
-		Success  bool   `json:"success"`
-		Password string `json:"password"`
-		Error    string `json:"error"`
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	if resp.StatusCode != http.StatusOK || !out.Success {
 		if out.Error == "" {
-			out.Error = "pairing failed"
+			out.Error = "connection failed"
 		}
-		return "", errors.New(out.Error)
+		return errors.New(out.Error)
 	}
 
-	a.record(scanner.Activity{Timestamp: time.Now(), Type: "linked", Description: "paired with handle " + handle})
-	return out.Password, nil
+	a.record(scanner.Activity{Timestamp: time.Now(), Type: "linked", Description: "connected with handle " + handle})
+	return nil
 }
