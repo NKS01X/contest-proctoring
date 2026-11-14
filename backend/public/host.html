@@ -9,6 +9,9 @@
   h2 { margin-top: 0; }
   input, button { padding: 8px 12px; border-radius: 6px; border: 1px solid #333; background: #1a1d24; color: inherit; }
   button { cursor: pointer; }
+  button.danger { border-color: #7a2f2f; color: #ff8a8a; }
+  .bar { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+  .bar input[type=number] { width: 80px; }
   .cols { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; margin-top: 16px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #23262e; vertical-align: top; }
@@ -16,8 +19,9 @@
   tbody tr.s:hover { background: #1a1d24; }
   .on { color: #3ddc84; } .off { color: #666; }
   tr.flagged td { color: #ff6b6b; }
-  .box { max-height: 75vh; overflow: auto; }
+  .box { max-height: 70vh; overflow: auto; }
   #err { color: #ff6b6b; margin-left: 10px; }
+  #msg { color: #3ddc84; margin-left: 10px; }
   .desc { word-break: break-word; }
 </style>
 </head>
@@ -27,29 +31,41 @@
   <input id="key" type="password" placeholder="Host key">
   <button id="go">Connect</button>
   <label style="margin-left:12px"><input id="onlyFlagged" type="checkbox"> flagged only</label>
-  <span id="err"></span>
+  <span id="err"></span><span id="msg"></span>
+</div>
+<div class="bar">
+  <span>Delete events older than</span>
+  <input id="age" type="number" min="0" value="60">
+  <span>min (0 = all)</span>
+  <label><input id="keepFlagged" type="checkbox" checked> keep flagged</label>
+  <button id="delSel" class="danger">Selected session</button>
+  <button id="delAll" class="danger">All sessions</button>
+  <button id="delSession" class="danger">Remove selected session</button>
 </div>
 <div class="cols">
   <div class="box">
     <table>
-      <thead><tr><th></th><th>Handle</th><th>Token</th><th>Events</th><th>Flags</th><th>Last seen</th></tr></thead>
+      <thead><tr><th></th><th>Handle</th><th>Token</th><th>Unique</th><th>Flags</th><th>Last seen</th></tr></thead>
       <tbody id="sbody"></tbody>
     </table>
   </div>
   <div class="box">
     <table>
-      <thead><tr><th>Time</th><th>Type</th><th>Description</th></tr></thead>
+      <thead><tr><th>First</th><th>Last</th><th>Type</th><th>Description</th><th>&times;</th></tr></thead>
       <tbody id="abody"></tbody>
     </table>
   </div>
 </div>
 <script>
+const POLL_MS = 10000;
 let key = sessionStorage.getItem('hostKey') || '';
 let current = null;
+let acts = new Map();
+let lastSeq = 0;
 const $ = (id) => document.getElementById(id);
 
-async function api(path) {
-  const r = await fetch(path, { headers: { 'x-host-key': key } });
+async function api(path, method = 'GET') {
+  const r = await fetch(path, { method, headers: { 'x-host-key': key } });
   if (!r.ok) throw new Error(r.status === 401 ? 'wrong host key' : 'HTTP ' + r.status);
   return r.json();
 }
@@ -61,6 +77,11 @@ function cell(text, cls) {
   return td;
 }
 
+function notify(text) {
+  $('msg').textContent = text;
+  setTimeout(() => { if ($('msg').textContent === text) $('msg').textContent = ''; }, 5000);
+}
+
 async function loadSessions() {
   if (!key) return;
   try {
@@ -70,7 +91,7 @@ async function loadSessions() {
     for (const s of rows) {
       const tr = document.createElement('tr');
       tr.className = 's';
-      tr.onclick = () => { current = s.token; loadActivity(); };
+      tr.onclick = () => { current = s.token; loadActivity(true); };
       tr.append(
         cell(s.online ? '\u25cf' : '\u25cb', s.online ? 'on' : 'off'),
         cell(s.cf_handle || '(unlinked)'),
@@ -87,31 +108,86 @@ async function loadSessions() {
   }
 }
 
-async function loadActivity() {
+function renderActivity() {
+  const body = $('abody');
+  body.replaceChildren();
+  const rows = [...acts.values()].sort((a, b) => b.seq - a.seq);
+  for (const a of rows) {
+    const tr = document.createElement('tr');
+    if (a.flagged) tr.className = 'flagged';
+    tr.append(
+      cell(new Date(a.first_ts).toLocaleTimeString()),
+      cell(new Date(a.ts).toLocaleTimeString()),
+      cell(a.type),
+      cell(a.description, 'desc'),
+      cell(a.cnt)
+    );
+    body.append(tr);
+  }
+}
+
+// Fetches only events seen again since lastSeq; reset=true reloads from scratch.
+async function loadActivity(reset) {
   if (!key || !current) return;
+  if (reset) { acts = new Map(); lastSeq = 0; }
   try {
     const only = $('onlyFlagged').checked ? '&flagged=1' : '';
-    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=300' + only);
-    const body = $('abody');
-    body.replaceChildren();
-    for (const a of rows) {
-      const tr = document.createElement('tr');
-      if (a.flagged) tr.className = 'flagged';
-      tr.append(cell(new Date(a.ts).toLocaleTimeString()), cell(a.type), cell(a.description, 'desc'));
-      body.append(tr);
+    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=1000&after=' + lastSeq + only);
+    for (const r of rows) {
+      acts.set(r.k, r);
+      if (r.seq > lastSeq) lastSeq = r.seq;
     }
+    if (rows.length || reset) renderActivity();
   } catch (e) {
     $('err').textContent = e.message;
   }
 }
+
+function pruneQuery() {
+  const age = Math.max(parseFloat($('age').value) || 0, 0);
+  return '?older_than_min=' + age + '&keep_flagged=' + ($('keepFlagged').checked ? 1 : 0);
+}
+
+async function run(confirmText, path, label) {
+  if (!key || !confirm(confirmText)) return;
+  try {
+    const r = await api(path, 'DELETE');
+    notify(label(r));
+    $('err').textContent = '';
+    await loadSessions();
+    await loadActivity(true);
+  } catch (e) {
+    $('err').textContent = e.message;
+  }
+}
+
+$('delSel').onclick = () => {
+  if (!current) return ($('err').textContent = 'select a session first');
+  run('Delete matching events of session ' + current + '?',
+    '/api/host/sessions/' + encodeURIComponent(current) + '/activity' + pruneQuery(),
+    (r) => 'deleted ' + r.deleted_events + ' event(s)');
+};
+$('delAll').onclick = () =>
+  run('Delete matching events of ALL sessions?', '/api/host/activity' + pruneQuery(),
+    (r) => 'deleted ' + r.deleted_events + ' event(s)');
+$('delSession').onclick = () => {
+  if (!current) return ($('err').textContent = 'select a session first');
+  const t = current;
+  run('Remove session ' + t + ' and all its events?', '/api/host/sessions/' + encodeURIComponent(t),
+    (r) => { current = null; return 'removed session, ' + r.deleted_events + ' event(s)'; });
+};
 
 $('go').onclick = () => {
   key = $('key').value;
   sessionStorage.setItem('hostKey', key);
   loadSessions();
 };
-$('onlyFlagged').onchange = loadActivity;
-setInterval(() => { loadSessions(); loadActivity(); }, 5000);
+$('onlyFlagged').onchange = () => loadActivity(true);
+setInterval(() => {
+  if (document.hidden) return;
+  loadSessions();
+  loadActivity(false);
+}, POLL_MS);
 loadSessions();
 </script>
 </body>

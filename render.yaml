@@ -14,3 +14,8 @@ services:
         sync: false
       - key: HOST_KEY
         sync: false
+      # auto-prune events not seen again for N hours (0 = off)
+      - key: RETENTION_HOURS
+        value: "0"
+      - key: PRUNE_KEEP_FLAGGED
+        value: "1"

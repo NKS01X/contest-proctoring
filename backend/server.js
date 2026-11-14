@@ -10,10 +10,26 @@ const PORT = process.env.PORT || 8080;
 const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD;
 const HOST_KEY = process.env.HOST_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
+// Optional auto-prune: delete events not seen again for this many hours (0 = off).
+const RETENTION_HOURS = parseFloat(process.env.RETENTION_HOURS) || 0;
+const PRUNE_KEEP_FLAGGED = process.env.PRUNE_KEEP_FLAGGED !== '0';
+const PRUNE_EVERY_MS = 10 * 60 * 1000;
 
 const ONLINE_MS = 35000;
 const MAX_BATCH = 1000;
 const MAX_DESC = 4000;
+const MAX_STR_CACHE = 50000;
+
+const TYPES = {
+    process_snapshot: 1,
+    process_start: 2,
+    process_stop: 3,
+    window: 4,
+    session_start: 5,
+    session_end: 6,
+    linked: 7,
+};
+const TYPE_NAMES = Object.fromEntries(Object.entries(TYPES).map(([k, v]) => [v, k]));
 
 if (!CONTEST_PASSWORD || !HOST_KEY || !DATABASE_URL) {
     console.error('FATAL: CONTEST_PASSWORD, HOST_KEY and DATABASE_URL must be set.');
@@ -37,48 +53,142 @@ async function initDb() {
             first_seen BIGINT NOT NULL,
             last_seen  BIGINT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS proctor.activities (
-            seq         BIGSERIAL PRIMARY KEY,
-            token       TEXT NOT NULL,
-            event_id    TEXT NOT NULL,
-            ts          BIGINT NOT NULL,
-            type        TEXT NOT NULL,
-            description TEXT NOT NULL,
-            flagged     INTEGER NOT NULL DEFAULT 0,
-            UNIQUE (token, event_id)
+        ALTER TABLE proctor.sessions ADD COLUMN IF NOT EXISTS total   INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE proctor.sessions ADD COLUMN IF NOT EXISTS flagged INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE proctor.sessions ADD COLUMN IF NOT EXISTS last_n  INTEGER NOT NULL DEFAULT 0;
+
+        -- every distinct description is stored exactly once
+        CREATE TABLE IF NOT EXISTS proctor.strings (
+            id  SERIAL PRIMARY KEY,
+            h   TEXT NOT NULL UNIQUE,
+            txt TEXT NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS idx_activities_token_seq ON proctor.activities (token, seq);
+
+        -- one row per unique (session, type, description): first/last time and repeat count
+        CREATE TABLE IF NOT EXISTS proctor.uevents (
+            token    TEXT NOT NULL,
+            type     SMALLINT NOT NULL,
+            sid      INTEGER NOT NULL,
+            first_ts BIGINT NOT NULL,
+            last_ts  BIGINT NOT NULL,
+            cnt      INTEGER NOT NULL DEFAULT 1,
+            flagged  SMALLINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (token, type, sid)
+        );
+        CREATE INDEX IF NOT EXISTS idx_uevents_token_last ON proctor.uevents (token, last_ts);
+        CREATE INDEX IF NOT EXISTS idx_uevents_last ON proctor.uevents (last_ts);
     `);
 }
 
+const md5 = (s) => crypto.createHash('md5').update(s).digest('hex');
+const strCache = new Map(); // md5 -> strings.id
+
+// Returns the strings.id for each text, inserting only texts never seen before.
+async function internStrings(texts) {
+    if (strCache.size > MAX_STR_CACHE) strCache.clear();
+
+    const missing = new Map();
+    for (const t of texts) {
+        const h = md5(t);
+        if (!strCache.has(h)) missing.set(h, t);
+    }
+
+    if (missing.size) {
+        const hs = [...missing.keys()];
+        const { rows } = await pool.query(
+            `WITH ins AS (
+                 INSERT INTO proctor.strings (h, txt)
+                 SELECT * FROM unnest($1::text[], $2::text[])
+                 ON CONFLICT (h) DO NOTHING
+                 RETURNING id, h
+             )
+             SELECT id, h FROM ins
+             UNION ALL
+             SELECT id, h FROM proctor.strings WHERE h = ANY($1::text[])`,
+            [hs, [...missing.values()]]
+        );
+        for (const r of rows) strCache.set(r.h, r.id);
+
+        // a concurrent request may have inserted the same string after our snapshot
+        const lost = hs.filter((h) => !strCache.has(h));
+        if (lost.length) {
+            const again = await pool.query('SELECT id, h FROM proctor.strings WHERE h = ANY($1::text[])', [lost]);
+            for (const r of again.rows) strCache.set(r.h, r.id);
+        }
+    }
+    return texts.map((t) => strCache.get(md5(t)));
+}
+
 async function ingest(token, items, now) {
+    const evs = [];
+    for (const a of items) {
+        if (!a || typeof a.id !== 'string' || typeof a.type !== 'string') continue;
+        const type = TYPES[a.type];
+        const n = parseInt(a.id.slice(a.id.lastIndexOf('-') + 1), 10);
+        if (!type || !Number.isInteger(n)) continue;
+        evs.push({
+            n,
+            type,
+            ts: Date.parse(a.timestamp) || now,
+            desc: String(a.description ?? '').slice(0, MAX_DESC),
+            flagged: a.flagged ? 1 : 0,
+        });
+    }
+
+    const sids = evs.length ? await internStrings(evs.map((e) => e.desc)) : [];
+    evs.forEach((e, i) => { e.sid = sids[i]; });
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        await client.query(
+        // locks the session row; last_n makes client retries idempotent so counts stay exact
+        const { rows: [sess] } = await client.query(
             `INSERT INTO proctor.sessions (token, first_seen, last_seen) VALUES ($1, $2, $2)
-             ON CONFLICT (token) DO UPDATE SET last_seen = EXCLUDED.last_seen`,
+             ON CONFLICT (token) DO UPDATE SET last_seen = EXCLUDED.last_seen
+             RETURNING last_n`,
             [token, now]
         );
 
-        const ids = [], tss = [], types_ = [], descs = [], flags = [];
-        for (const a of items) {
-            if (!a || typeof a.id !== 'string' || typeof a.type !== 'string') continue;
-            ids.push(a.id.slice(0, 80));
-            tss.push(Date.parse(a.timestamp) || now);
-            types_.push(a.type.slice(0, 64));
-            descs.push(String(a.description ?? '').slice(0, MAX_DESC));
-            flags.push(a.flagged ? 1 : 0);
-        }
-
-        if (ids.length) {
+        const fresh = evs.filter((e) => e.n > sess.last_n);
+        if (fresh.length) {
+            const agg = new Map();
+            let maxN = sess.last_n;
+            for (const e of fresh) {
+                if (e.n > maxN) maxN = e.n;
+                const k = e.type + ':' + e.sid;
+                const g = agg.get(k);
+                if (!g) agg.set(k, { type: e.type, sid: e.sid, first: e.ts, last: e.ts, cnt: 1, flagged: e.flagged });
+                else {
+                    g.first = Math.min(g.first, e.ts);
+                    g.last = Math.max(g.last, e.ts);
+                    g.cnt++;
+                }
+            }
+            const g = [...agg.values()];
             await client.query(
-                `INSERT INTO proctor.activities (token, event_id, ts, type, description, flagged)
-                 SELECT $1, * FROM unnest($2::text[], $3::bigint[], $4::text[], $5::text[], $6::int[])
-                 ON CONFLICT (token, event_id) DO NOTHING`,
-                [token, ids, tss, types_, descs, flags]
+                `WITH ins AS (
+                     INSERT INTO proctor.uevents (token, type, sid, first_ts, last_ts, cnt, flagged)
+                     SELECT $1, * FROM unnest($2::smallint[], $3::int[], $4::bigint[], $5::bigint[], $6::int[], $7::smallint[])
+                     ON CONFLICT (token, type, sid) DO UPDATE SET
+                         first_ts = LEAST(proctor.uevents.first_ts, EXCLUDED.first_ts),
+                         last_ts  = GREATEST(proctor.uevents.last_ts, EXCLUDED.last_ts),
+                         cnt      = proctor.uevents.cnt + EXCLUDED.cnt
+                     RETURNING (xmax = 0) AS inserted, flagged
+                 )
+                 UPDATE proctor.sessions SET
+                     total   = total + (SELECT COUNT(*) FROM ins WHERE inserted),
+                     flagged = flagged + (SELECT COALESCE(SUM(flagged), 0) FROM ins WHERE inserted),
+                     last_n  = $8
+                 WHERE token = $1`,
+                [
+                    token,
+                    g.map((x) => x.type), g.map((x) => x.sid),
+                    g.map((x) => x.first), g.map((x) => x.last),
+                    g.map((x) => x.cnt), g.map((x) => x.flagged),
+                    maxN,
+                ]
             );
-            const nFlagged = flags.reduce((s, f) => s + f, 0);
+            const nFlagged = fresh.reduce((s, e) => s + e.flagged, 0);
             if (nFlagged) console.log(`[FLAGGED] Token: ${token} | ${nFlagged} flagged event(s) in batch`);
         }
         await client.query('COMMIT');
@@ -88,6 +198,34 @@ async function ingest(token, items, now) {
     } finally {
         client.release();
     }
+}
+
+// Deletes unique events whose last_ts is before beforeTs (optionally one session, optionally keeping
+// flagged ones) and fixes the per-session counters. Returns the number of rows deleted.
+async function prune({ token = null, beforeTs, keepFlagged = true }) {
+    const params = [beforeTs];
+    let where = 'last_ts < $1';
+    if (token) {
+        params.push(token);
+        where += ` AND token = $${params.length}`;
+    }
+    if (keepFlagged) where += ' AND flagged = 0';
+
+    const { rows } = await pool.query(
+        `WITH del AS (DELETE FROM proctor.uevents WHERE ${where} RETURNING token)
+         SELECT token, COUNT(*)::int AS n FROM del GROUP BY token`,
+        params
+    );
+    if (!rows.length) return 0;
+
+    await pool.query(
+        `UPDATE proctor.sessions s SET
+             total   = (SELECT COUNT(*) FROM proctor.uevents e WHERE e.token = s.token),
+             flagged = (SELECT COALESCE(SUM(e.flagged), 0) FROM proctor.uevents e WHERE e.token = s.token)
+         WHERE s.token = ANY($1::text[])`,
+        [rows.map((r) => r.token)]
+    );
+    return rows.reduce((s, r) => s + r.n, 0);
 }
 
 const wrap = (fn) => (req, res) =>
@@ -142,31 +280,68 @@ function requireHost(req, res, next) {
     next();
 }
 
+// total = unique events per session
 app.get('/api/host/sessions', requireHost, wrap(async (req, res) => {
-    const { rows } = await pool.query(`
-        SELECT s.token, s.cf_handle, s.first_seen, s.last_seen,
-               COUNT(a.seq) AS total,
-               COALESCE(SUM(a.flagged), 0) AS flagged
-        FROM proctor.sessions s LEFT JOIN proctor.activities a ON a.token = s.token
-        GROUP BY s.token
-        ORDER BY s.last_seen DESC
-    `);
+    const { rows } = await pool.query(
+        'SELECT token, cf_handle, first_seen, last_seen, total, flagged FROM proctor.sessions ORDER BY last_seen DESC'
+    );
     const now = Date.now();
-    res.json(rows.map((r) => ({ ...r, total: Number(r.total), flagged: Number(r.flagged), online: now - r.last_seen < ONLINE_MS })));
+    res.json(rows.map((r) => ({ ...r, online: now - r.last_seen < ONLINE_MS })));
 }));
 
-// Newest first. Use ?after=<seq> to fetch only rows newer than a known seq.
+// Newest first. ?after=<seq> returns only events seen again at/after that time (seq = last_ts).
 app.get('/api/host/sessions/:token/activity', requireHost, wrap(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
     const after = parseInt(req.query.after, 10) || 0;
-    const flaggedOnly = req.query.flagged === '1' ? 'AND flagged = 1' : '';
+    const flaggedOnly = req.query.flagged === '1' ? 'AND e.flagged = 1' : '';
     const { rows } = await pool.query(
-        `SELECT seq, ts, type, description, flagged FROM proctor.activities
-         WHERE token = $1 AND seq > $2 ${flaggedOnly}
-         ORDER BY seq DESC LIMIT $3`,
+        `SELECT e.type::text || ':' || e.sid AS k, e.last_ts AS seq, e.first_ts, e.last_ts AS ts,
+                e.cnt, e.type, s.txt AS description, e.flagged
+         FROM proctor.uevents e JOIN proctor.strings s ON s.id = e.sid
+         WHERE e.token = $1 AND e.last_ts >= $2 ${flaggedOnly}
+         ORDER BY e.last_ts DESC LIMIT $3`,
         [req.params.token, after, limit]
     );
-    res.json(rows);
+    res.json(rows.map((r) => ({ ...r, type: TYPE_NAMES[r.type] || 'unknown' })));
+}));
+
+// Delete a session and all its events.
+app.delete('/api/host/sessions/:token', requireHost, wrap(async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const ev = await client.query('DELETE FROM proctor.uevents WHERE token = $1', [req.params.token]);
+        const se = await client.query('DELETE FROM proctor.sessions WHERE token = $1', [req.params.token]);
+        await client.query('COMMIT');
+        res.json({ deleted_events: ev.rowCount, deleted_sessions: se.rowCount });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+    } finally {
+        client.release();
+    }
+}));
+
+// Delete events of one session not seen again for ?older_than_min=N minutes (0 = all).
+// Flagged events are kept unless ?keep_flagged=0.
+app.delete('/api/host/sessions/:token/activity', requireHost, wrap(async (req, res) => {
+    const mins = Math.max(parseFloat(req.query.older_than_min) || 0, 0);
+    const deleted = await prune({
+        token: req.params.token,
+        beforeTs: Date.now() - mins * 60000,
+        keepFlagged: req.query.keep_flagged !== '0',
+    });
+    res.json({ deleted_events: deleted });
+}));
+
+// Same as above across all sessions.
+app.delete('/api/host/activity', requireHost, wrap(async (req, res) => {
+    const mins = Math.max(parseFloat(req.query.older_than_min) || 0, 0);
+    const deleted = await prune({
+        beforeTs: Date.now() - mins * 60000,
+        keepFlagged: req.query.keep_flagged !== '0',
+    });
+    res.json({ deleted_events: deleted });
 }));
 
 app.get('/host', (req, res) => {
@@ -178,7 +353,16 @@ app.get('/', (req, res) => {
 });
 
 initDb()
-    .then(() => app.listen(PORT, () => console.log(`Backend gateway listening on port ${PORT}`)))
+    .then(() => {
+        app.listen(PORT, () => console.log(`Backend gateway listening on port ${PORT}`));
+        if (RETENTION_HOURS > 0) {
+            const run = () =>
+                prune({ beforeTs: Date.now() - RETENTION_HOURS * 3600000, keepFlagged: PRUNE_KEEP_FLAGGED })
+                    .then((n) => n && console.log(`[PRUNE] removed ${n} event(s)`))
+                    .catch((err) => console.error('prune failed:', err.message));
+            setInterval(run, PRUNE_EVERY_MS).unref();
+        }
+    })
     .catch((err) => {
         console.error('FATAL: database init failed:', err.message);
         process.exit(1);

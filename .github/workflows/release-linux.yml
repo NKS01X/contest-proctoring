@@ -1,0 +1,116 @@
+name: Build Linux Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # webkit2gtk-4.0: Ubuntu 20.04/22.04, Debian 11/12, Fedora <=39
+          - os: ubuntu-22.04
+            tag: webkit40
+            build_tags: ''
+            webkit_dev: libwebkit2gtk-4.0-dev
+            deb_dep: libwebkit2gtk-4.0-37
+            rpm_dep: webkit2gtk3
+          # webkit2gtk-4.1: Ubuntu 24.04+, Debian 13, Fedora 40+
+          - os: ubuntu-24.04
+            tag: webkit41
+            build_tags: webkit2_41
+            webkit_dev: libwebkit2gtk-4.1-dev
+            deb_dep: libwebkit2gtk-4.1-0
+            rpm_dep: webkit2gtk4.1
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ${{ matrix.webkit_dev }}
+
+      - name: Install Wails and nfpm
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        working-directory: daemon
+        run: |
+          go mod tidy
+          wails build -clean -platform linux/amd64 ${{ matrix.build_tags && format('-tags {0}', matrix.build_tags) || '' }} -ldflags "-s -w"
+
+      - name: Package (.deb, .rpm, .tar.gz)
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="0.0.0"; fi
+          cat > nfpm.yaml <<EOF
+          name: contest-proctor
+          arch: amd64
+          platform: linux
+          version: "${VERSION}"
+          section: utils
+          maintainer: NKS01X <noreply@github.com>
+          description: Contest proctoring client
+          homepage: https://github.com/NKS01X/contest-proctoring
+          contents:
+            - src: daemon/build/bin/contest-proctor
+              dst: /usr/bin/contest-proctor
+              file_info:
+                mode: 0755
+          overrides:
+            deb:
+              depends:
+                - libgtk-3-0
+                - ${{ matrix.deb_dep }}
+            rpm:
+              depends:
+                - gtk3
+                - ${{ matrix.rpm_dep }}
+          EOF
+          # versionless names so releases/latest/download/<name> links stay stable
+          mkdir -p dist
+          base="contest-proctor-linux-amd64-${{ matrix.tag }}"
+          nfpm package -p deb -t "dist/${base}.deb"
+          nfpm package -p rpm -t "dist/${base}.rpm"
+          tar -C daemon/build/bin -czf "dist/${base}.tar.gz" contest-proctor
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.tag }}
+          path: dist/*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach to GitHub Release
+        run: |
+          # the Windows/macOS workflow creates the release; wait for it, else create it
+          for i in $(seq 1 30); do
+            gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
