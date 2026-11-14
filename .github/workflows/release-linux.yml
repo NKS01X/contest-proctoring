@@ -80,8 +80,9 @@ jobs:
                 - gtk3
                 - ${{ matrix.rpm_dep }}
           EOF
+          # versionless names so releases/latest/download/<name> links stay stable
           mkdir -p dist
-          base="contest-proctor_${VERSION}_amd64_${{ matrix.tag }}"
+          base="contest-proctor-linux-amd64-${{ matrix.tag }}"
           nfpm package -p deb -t "dist/${base}.deb"
           nfpm package -p rpm -t "dist/${base}.rpm"
           tar -C daemon/build/bin -czf "dist/${base}.tar.gz" contest-proctor
