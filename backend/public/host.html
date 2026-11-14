@@ -3,232 +3,589 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Host Dashboard</title>
+<meta name="color-scheme" content="light dark">
+<title>Host dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 20px; }
-  h2 { margin-top: 0; }
-  input, button { padding: 8px 12px; border-radius: 6px; border: 1px solid #333; background: #1a1d24; color: inherit; }
-  button { cursor: pointer; }
-  button:hover { border-color: #555; }
-  button.danger { border-color: #7a2f2f; color: #ff8a8a; }
-  .bar { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
-  .bar input[type=number] { width: 80px; }
-  .cols { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; margin-top: 16px; }
+  :root {
+    --bg: #eef1f5; --surface: #ffffff; --surface2: #f5f7fa; --line: #d8dee8;
+    --ink: #17202e; --muted: #596579; --blue: #1f5fbf; --on-blue: #ffffff;
+    --green: #17865a; --red: #c4362c; --on-red: #ffffff; --amber: #9a6208;
+    --red-bg: #fdeceb; --sel: #e3ecfa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d121a; --surface: #141b26; --surface2: #19212e; --line: #263140;
+      --ink: #e6ebf2; --muted: #94a1b4; --blue: #6aa2f2; --on-blue: #0a1220;
+      --green: #4cc38a; --red: #ff7f72; --on-red: #1a0b0a; --amber: #e3ae52;
+      --red-bg: #2b1a1c; --sel: #1a2a44;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  h1, h2, p { margin: 0; }
+
+  .btn { font: inherit; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+  .btn:hover:not(:disabled) { border-color: var(--muted); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: var(--on-blue); font-weight: 500; }
+  .btn.danger { background: var(--red); border-color: var(--red); color: var(--on-red); font-weight: 500; }
+  .field { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; }
+  .field::placeholder { color: var(--muted); }
+  label.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  /* ---- sign-in ---- */
+  .gate { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+  .gate form { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; display: grid; gap: 14px; }
+  .gate h1 { font-size: 20px; font-weight: 600; }
+  .gate p { color: var(--muted); }
+  .gate label { font-weight: 500; display: grid; gap: 6px; }
+  .gate .err { color: var(--red); min-height: 1.4em; }
+
+  /* ---- app shell ---- */
+  .app { max-width: 1400px; margin: 0 auto; padding: 16px 20px 24px; }
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding-bottom: 14px; }
+  .top h1 { font-size: 18px; font-weight: 600; margin-right: auto; }
+  .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+  .stat b { font-size: 20px; font-weight: 600; margin-right: 5px; }
+  .stat span { color: var(--muted); }
+  .stat.alert b { color: var(--red); }
+  .actions { display: flex; align-items: center; gap: 8px; }
+  #updated { color: var(--muted); font-size: 12px; }
+  .banner { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+
+  .cols { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 16px; align-items: start; }
   @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #23262e; vertical-align: top; }
-  th { position: sticky; top: 0; background: #0f1115; z-index: 1; }
-  tbody tr.s { cursor: pointer; }
-  tbody tr.s:hover { background: #1a1d24; }
-  tbody tr.sel { background: #1f2a3a; }
-  .on { color: #3ddc84; } .off { color: #666; }
-  .flag { color: #ff6b6b; font-weight: 600; }
-  tr.flagged td { color: #ff6b6b; }
-  .box { max-height: 70vh; overflow: auto; }
-  .empty { color: #8a8f99; text-align: center; padding: 20px 8px; }
-  #err { color: #ff6b6b; margin-left: 10px; }
-  #msg { color: #3ddc84; margin-left: 10px; }
-  #summary { color: #8a8f99; margin-left: 10px; font-size: 13px; }
-  .desc { word-break: break-word; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface2); }
+  .tools .field { flex: 1 1 140px; }
+  .scroll { overflow: auto; max-height: calc(100vh - 190px); min-height: 160px; }
+  @media (max-width: 900px) { .scroll { max-height: 55vh; } }
+
+  /* ---- session list ---- */
+  .slist { list-style: none; margin: 0; padding: 0; }
+  .srow { display: grid; grid-template-columns: 14px 1fr auto; grid-template-areas: "dot name badge" ". token meta"; gap: 2px 10px; align-items: baseline; width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 10px 12px; cursor: pointer; border-left: 3px solid transparent; }
+  .srow:hover { background: var(--surface2); }
+  .srow.sel { background: var(--sel); border-left-color: var(--blue); }
+  .dot { grid-area: dot; width: 9px; height: 9px; border-radius: 50%; background: transparent; border: 2px solid var(--muted); align-self: center; }
+  .dot.on { background: var(--green); border-color: var(--green); }
+  .sname { grid-area: name; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sname em { color: var(--muted); font-style: normal; font-weight: 400; }
+  .badge { grid-area: badge; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+  .badge.flag { background: var(--red); color: var(--on-red); font-weight: 500; }
+  .stoken { grid-area: token; font-size: 12px; color: var(--muted); }
+  .smeta { grid-area: meta; font-size: 12px; color: var(--muted); }
+
+  /* ---- activity ---- */
+  .ahead { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+  .ahead h2 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ahead p { color: var(--muted); font-size: 13px; }
+  .pill { font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.on { color: var(--green); border-color: var(--green); }
+  table { width: 100%; border-collapse: collapse; }
+  th { position: sticky; top: 0; z-index: 1; background: var(--surface2); text-align: left; font-weight: 600; font-size: 12px; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.t, td.n { white-space: nowrap; }
+  td.t { color: var(--muted); font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  td.d { word-break: break-word; }
+  td.n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip { font-size: 12px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface2); white-space: nowrap; }
+  tr.flagged { background: var(--red-bg); }
+  tr.flagged td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+  tr.flagged .chip { border-color: var(--red); color: var(--red); }
+  .empty { color: var(--muted); text-align: center; padding: 36px 16px; }
+  .foot { padding: 8px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); background: var(--surface2); }
+
+  /* ---- cleanup dialog ---- */
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 0; width: min(480px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(10, 14, 20, .55); }
+  dialog form { padding: 20px; display: grid; gap: 14px; }
+  dialog h2 { font-size: 17px; font-weight: 600; }
+  fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+  fieldset label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+  fieldset label span small { display: block; color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row .field { width: 90px; }
+  .summary { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .dfoot { display: flex; justify-content: flex-end; gap: 8px; }
+  #cleanupErr { color: var(--red); }
+
+  /* ---- toasts ---- */
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; }
+  .toast { background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 8px; max-width: 320px; }
+  .toast.bad { background: var(--red); color: var(--on-red); }
+  @media (prefers-reduced-motion: no-preference) { .toast { animation: rise .18s ease-out; } @keyframes rise { from { transform: translateY(6px); opacity: 0; } } }
 </style>
 </head>
 <body>
-<h2>Contest Host Dashboard</h2>
-<div>
-  <input id="key" type="password" placeholder="Host key" autocomplete="off">
-  <button id="go">Connect</button>
-  <label style="margin-left:12px"><input id="onlyFlagged" type="checkbox"> flagged only</label>
-  <span id="summary"></span><span id="err"></span><span id="msg"></span>
+
+<div class="gate" id="gate" hidden>
+  <form id="gateForm">
+    <h1>Host dashboard</h1>
+    <p>Enter the host key to watch contest sessions.</p>
+    <label>Host key
+      <input id="gk" class="field" type="password" autocomplete="current-password" required>
+    </label>
+    <p class="err" id="gerr" role="alert"></p>
+    <button class="btn primary" id="gbtn" type="submit">Open dashboard</button>
+  </form>
 </div>
-<div class="bar">
-  <span>Delete events older than</span>
-  <input id="age" type="number" min="0" value="60">
-  <span>min (0 = all)</span>
-  <label><input id="keepFlagged" type="checkbox" checked> keep flagged</label>
-  <button id="delSel" class="danger">Selected session</button>
-  <button id="delAll" class="danger">All sessions</button>
-  <button id="delSession" class="danger">Remove selected session</button>
+
+<div class="app" id="app" hidden>
+  <header class="top">
+    <h1>Host dashboard</h1>
+    <div class="stats">
+      <div class="stat"><b id="stOnline">0</b><span>online</span></div>
+      <div class="stat"><b id="stTotal">0</b><span>sessions</span></div>
+      <div class="stat alert" id="stFlagWrap"><b id="stFlag">0</b><span>flagged events</span></div>
+    </div>
+    <div class="actions">
+      <span id="updated"></span>
+      <button class="btn" id="cleanupBtn" type="button">Clean up&hellip;</button>
+      <button class="btn" id="signout" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" role="status" hidden></div>
+
+  <main class="cols">
+    <section class="panel" aria-label="Sessions">
+      <div class="tools">
+        <input id="sq" class="field" type="search" placeholder="Find handle or code" aria-label="Find handle or code">
+        <select id="sort" class="field" aria-label="Sort sessions" style="flex:0 0 auto">
+          <option value="recent">Recent first</option>
+          <option value="flagged">Most flagged</option>
+          <option value="name">Handle A to Z</option>
+        </select>
+        <label class="check"><input id="onlineOnly" type="checkbox"> Online only</label>
+      </div>
+      <div class="scroll"><ul class="slist" id="slist"></ul></div>
+    </section>
+
+    <section class="panel" id="activityPanel" aria-label="Activity">
+      <div class="ahead" id="ahead"></div>
+      <div class="tools">
+        <input id="eq" class="field" type="search" placeholder="Search descriptions" aria-label="Search descriptions">
+        <select id="etype" class="field" aria-label="Event type" style="flex:0 0 auto"><option value="">All types</option></select>
+        <label class="check"><input id="flaggedOnly" type="checkbox"> Flagged only</label>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Type</th><th>Description</th><th>Seen</th><th>First</th><th>Last</th></tr></thead>
+          <tbody id="abody"></tbody>
+        </table>
+      </div>
+      <div class="foot" id="ecount"></div>
+    </section>
+  </main>
 </div>
-<div class="cols">
-  <div class="box">
-    <table>
-      <thead><tr><th></th><th>Handle</th><th>Token</th><th>Unique</th><th>Flags</th><th>Last seen</th></tr></thead>
-      <tbody id="sbody"></tbody>
-    </table>
-  </div>
-  <div class="box">
-    <table>
-      <thead><tr><th>First</th><th>Last</th><th>Type</th><th>Description</th><th>Count</th></tr></thead>
-      <tbody id="abody"></tbody>
-    </table>
-  </div>
-</div>
+
+<dialog id="cleanup">
+  <form method="dialog" id="cleanupForm">
+    <h2>Clean up</h2>
+    <fieldset>
+      <legend class="sr">What to delete</legend>
+      <label><input type="radio" name="scope" value="events" checked> <span>Events of the selected session<small id="scopeSelName"></small></span></label>
+      <label><input type="radio" name="scope" value="all"> <span>Events of all sessions</span></label>
+      <label><input type="radio" name="scope" value="session"> <span>Remove the selected session<small>Deletes the session and everything it recorded.</small></span></label>
+    </fieldset>
+    <div id="opts" class="row">
+      <span>Only events not seen for</span>
+      <input id="age" class="field" type="number" min="0" value="60" aria-label="Minutes">
+      <span>minutes (0 = all)</span>
+      <label class="check" style="width:100%"><input id="keepFlagged" type="checkbox" checked> Keep flagged events</label>
+    </div>
+    <p class="summary" id="cleanupSummary"></p>
+    <p id="cleanupErr" role="alert"></p>
+    <div class="dfoot">
+      <button class="btn" id="cancelCleanup" type="button">Cancel</button>
+      <button class="btn danger" id="doCleanup" type="button">Delete events</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+
 <script>
 const POLL_MS = 5000;
+const TYPE_LABEL = {
+  process_snapshot: 'Running',
+  process_start: 'Started',
+  process_stop: 'Stopped',
+  window: 'Window',
+  session_start: 'Session start',
+  session_end: 'Session end',
+  linked: 'Connected',
+};
+const $ = (id) => document.getElementById(id);
+
 let key = sessionStorage.getItem('hostKey') || '';
-let badKey = false;
 let current = null;
+let sessions = [];
 let acts = new Map();
 let lastSeq = 0;
 let gen = 0;
-const $ = (id) => document.getElementById(id);
-$('key').value = key;
+let actLoaded = false;
+let busy = false;
+
+class ApiError extends Error {
+  constructor(kind, msg) { super(msg); this.kind = kind; }
+}
 
 async function api(path, method = 'GET') {
   let r;
   try {
     r = await fetch(path, { method, headers: { 'x-host-key': key } });
   } catch (e) {
-    throw new Error('cannot reach server (it may be waking up, retrying)');
+    throw new ApiError('network', 'Cannot reach the server.');
   }
-  if (r.status === 401) { badKey = true; throw new Error('wrong host key'); }
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  if (r.status === 401) throw new ApiError('auth', 'That host key was not accepted.');
+  if (!r.ok) throw new ApiError('http', 'The server returned an error (HTTP ' + r.status + ').');
   return r.json();
 }
 
-function cell(text, cls) {
-  const td = document.createElement('td');
-  td.textContent = text;
-  if (cls) td.className = cls;
-  return td;
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on')) e[k] = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    e.append(kid.nodeType ? kid : document.createTextNode(kid));
+  }
+  return e;
 }
 
-function emptyRow(cols, text) {
-  const tr = document.createElement('tr');
-  const td = cell(text, 'empty');
-  td.colSpan = cols;
-  tr.append(td);
-  return tr;
+function ago(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 5) return 'just now';
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const hr = Math.floor(m / 60);
+  if (hr < 24) return hr + 'h ago';
+  return Math.floor(hr / 24) + 'd ago';
 }
 
-function notify(text) {
-  $('msg').textContent = text;
-  setTimeout(() => { if ($('msg').textContent === text) $('msg').textContent = ''; }, 5000);
+function clock(ts) {
+  return h('td', { class: 't', title: new Date(ts).toLocaleString(), text: new Date(ts).toLocaleTimeString() });
 }
 
-async function loadSessions() {
-  if (!key || badKey) return;
+function tick() {
+  document.querySelectorAll('[data-ago]').forEach((el) => {
+    el.textContent = (el.dataset.prefix || '') + ago(+el.dataset.ago);
+  });
+}
+setInterval(tick, 1000);
+
+function toast(text, bad) {
+  const t = h('div', { class: 'toast' + (bad ? ' bad' : ''), text });
+  $('toasts').append(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+function banner(text) {
+  $('banner').hidden = !text;
+  $('banner').textContent = text || '';
+}
+
+/* ---------- sign in / out ---------- */
+function showGate(msg) {
+  $('app').hidden = true;
+  $('gate').hidden = false;
+  $('gerr').textContent = msg || '';
+  $('gbtn').disabled = false;
+  $('gk').value = '';
+  $('gk').focus();
+}
+
+function showApp() {
+  $('gate').hidden = true;
+  $('app').hidden = false;
+}
+
+function signOut(msg) {
+  key = '';
+  current = null;
+  sessions = [];
+  acts = new Map();
+  sessionStorage.removeItem('hostKey');
+  banner('');
+  showGate(msg);
+}
+
+$('gateForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const k = $('gk').value.trim();
+  if (!k) return;
+  key = k;
+  $('gbtn').disabled = true;
+  $('gerr').textContent = 'Checking\u2026';
   try {
-    const rows = await api('/api/host/sessions');
-    const body = $('sbody');
-    body.replaceChildren();
-    for (const s of rows) {
-      const tr = document.createElement('tr');
-      tr.className = 's' + (s.token === current ? ' sel' : '');
-      tr.onclick = () => { current = s.token; loadSessions(); loadActivity(true); };
-      tr.append(
-        cell(s.online ? '\u25cf' : '\u25cb', s.online ? 'on' : 'off'),
-        cell(s.cf_handle || '(not connected)'),
-        cell(s.token),
-        cell(s.total),
-        cell(s.flagged, s.flagged ? 'flag' : ''),
-        cell(new Date(s.last_seen).toLocaleTimeString())
-      );
-      body.append(tr);
-    }
-    if (!rows.length) body.append(emptyRow(6, 'No sessions yet'));
-    $('summary').textContent = rows.filter((r) => r.online).length + ' online / ' + rows.length + ' total';
-    $('err').textContent = '';
-  } catch (e) {
-    $('err').textContent = e.message;
-    if (badKey) sessionStorage.removeItem('hostKey');
+    await loadSessions(true);
+    sessionStorage.setItem('hostKey', key);
+    showApp();
+    renderHead();
+    renderActivity();
+  } catch (err) {
+    if (err.kind === 'auth') signOut(err.message);
+    else { key = ''; showGate(err.message + ' It may be waking up; try again in a few seconds.'); }
+  }
+});
+$('signout').onclick = () => signOut('');
+
+/* ---------- sessions ---------- */
+async function loadSessions(throwErrors) {
+  try {
+    sessions = await api('/api/host/sessions');
+    banner('');
+    $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    renderStats();
+    renderSessions();
+    renderHead();
+  } catch (err) {
+    if (throwErrors) throw err;
+    if (err.kind === 'auth') return signOut(err.message);
+    banner(err.kind === 'network'
+      ? 'Cannot reach the server. Retrying every few seconds. If it was idle, it may take up to a minute to wake.'
+      : err.message);
   }
 }
+
+function renderStats() {
+  const flagged = sessions.reduce((n, s) => n + s.flagged, 0);
+  $('stOnline').textContent = sessions.filter((s) => s.online).length;
+  $('stTotal').textContent = sessions.length;
+  $('stFlag').textContent = flagged;
+  $('stFlagWrap').hidden = flagged === 0;
+}
+
+function visibleSessions() {
+  const q = $('sq').value.trim().toLowerCase();
+  const only = $('onlineOnly').checked;
+  const rows = sessions.filter((s) =>
+    (!only || s.online) &&
+    (!q || (s.cf_handle || '').toLowerCase().includes(q) || s.token.toLowerCase().includes(q)));
+  const sort = $('sort').value;
+  if (sort === 'flagged') rows.sort((a, b) => b.flagged - a.flagged || b.last_seen - a.last_seen);
+  else if (sort === 'name') rows.sort((a, b) => (a.cf_handle || '\uffff').toLowerCase().localeCompare((b.cf_handle || '\uffff').toLowerCase()));
+  return rows;
+}
+
+function renderSessions() {
+  const list = $('slist');
+  const rows = visibleSessions();
+  list.replaceChildren();
+  if (!rows.length) {
+    list.append(h('li', { class: 'empty', text: sessions.length
+      ? 'No sessions match these filters.'
+      : 'No sessions yet. They appear here as soon as a participant opens the app.' }));
+    return;
+  }
+  for (const s of rows) {
+    const sel = s.token === current;
+    list.append(h('li', {}, h('button', {
+      class: 'srow' + (sel ? ' sel' : ''), type: 'button', 'aria-pressed': String(sel),
+      onclick: () => select(s.token),
+    },
+      h('span', { class: 'dot ' + (s.online ? 'on' : 'off') }),
+      h('span', { class: 'sr', text: s.online ? 'Online' : 'Offline' }),
+      h('span', { class: 'sname' }, s.cf_handle ? s.cf_handle : h('em', { text: 'Not connected' })),
+      s.flagged ? h('span', { class: 'badge flag', text: s.flagged + ' flagged' }) : null,
+      h('span', { class: 'stoken mono', text: s.token }),
+      h('span', { class: 'smeta', 'data-ago': s.last_seen, 'data-prefix': s.online ? 'Active ' : 'Offline, seen ',
+        text: (s.online ? 'Active ' : 'Offline, seen ') + ago(s.last_seen) }))));
+  }
+}
+['sq', 'sort', 'onlineOnly'].forEach((id) => { $(id).addEventListener('input', renderSessions); });
+
+function select(token) {
+  current = token;
+  acts = new Map();
+  lastSeq = 0;
+  actLoaded = false;
+  gen++;
+  renderSessions();
+  renderHead();
+  renderActivity();
+  loadActivity(true);
+  if (matchMedia('(max-width: 900px)').matches) $('activityPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderHead() {
+  const box = $('ahead');
+  box.replaceChildren();
+  const s = sessions.find((x) => x.token === current);
+  if (!s) {
+    box.append(h('h2', { text: 'Activity' }), h('p', { text: 'Select a session to see what its participant is running.' }));
+    return;
+  }
+  box.append(
+    h('h2', {}, s.cf_handle || 'Not connected',
+      h('span', { class: 'pill ' + (s.online ? 'on' : ''), text: s.online ? 'Online' : 'Offline' })),
+    h('p', {}, h('span', { class: 'mono', text: s.token }),
+      ' \u2014 ' + s.total + ' unique events, ' + s.flagged + ' flagged'));
+}
+
+/* ---------- activity ---------- */
+const typeSel = $('etype');
+for (const [k, label] of Object.entries(TYPE_LABEL)) typeSel.append(h('option', { value: k, text: label }));
 
 function renderActivity() {
   const body = $('abody');
   body.replaceChildren();
-  if (!current) { body.append(emptyRow(5, 'Select a session')); return; }
-  const rows = [...acts.values()].sort((a, b) => b.seq - a.seq);
-  if (!rows.length) { body.append(emptyRow(5, 'No events')); return; }
-  for (const a of rows) {
-    const tr = document.createElement('tr');
-    if (a.flagged) tr.className = 'flagged';
-    tr.append(
-      cell(new Date(a.first_ts).toLocaleTimeString()),
-      cell(new Date(a.ts).toLocaleTimeString()),
-      cell(a.type),
-      cell(a.description, 'desc'),
-      cell(a.cnt)
-    );
-    body.append(tr);
-  }
-}
+  const msg = (text) => {
+    body.append(h('tr', {}, h('td', { class: 'empty', colspan: '5', text })));
+    $('ecount').textContent = '';
+  };
+  if (!current) return msg('Select a session on the left.');
+  if (!actLoaded) return msg('Loading\u2026');
 
-// Fetches only events seen again since lastSeq; reset=true reloads from scratch.
+  const q = $('eq').value.trim().toLowerCase();
+  const t = $('etype').value;
+  const rows = [...acts.values()]
+    .filter((a) => (!t || a.type === t) && (!q || a.description.toLowerCase().includes(q)))
+    .sort((a, b) => b.seq - a.seq);
+  if (!rows.length) return msg(acts.size ? 'No events match these filters.' : 'No events recorded for this session yet.');
+
+  for (const a of rows) {
+    body.append(h('tr', { class: a.flagged ? 'flagged' : '' },
+      h('td', {}, h('span', { class: 'chip', text: TYPE_LABEL[a.type] || a.type })),
+      h('td', { class: 'd' }, a.flagged ? h('strong', { text: 'Flagged: ' }) : null, a.description),
+      h('td', { class: 'n', text: a.cnt > 1 ? '\u00d7' + a.cnt : '1' }),
+      clock(a.first_ts),
+      clock(a.ts)));
+  }
+  $('ecount').textContent = rows.length + (rows.length === 1 ? ' event' : ' events') +
+    (acts.size >= 1000 ? ' (showing the 1000 most recent)' : '');
+}
+$('eq').addEventListener('input', renderActivity);
+$('etype').addEventListener('change', renderActivity);
+$('flaggedOnly').addEventListener('change', () => { actLoaded = false; acts = new Map(); lastSeq = 0; gen++; renderActivity(); loadActivity(true); });
+
 async function loadActivity(reset) {
-  if (!key || badKey) return;
+  if (!key || !current) return;
   if (reset) { acts = new Map(); lastSeq = 0; gen++; }
-  if (!current) { if (reset) renderActivity(); return; }
   const myGen = gen;
   const token = current;
   try {
-    const only = $('onlyFlagged').checked ? '&flagged=1' : '';
+    const only = $('flaggedOnly').checked ? '&flagged=1' : '';
     const rows = await api('/api/host/sessions/' + encodeURIComponent(token) + '/activity?limit=1000&after=' + lastSeq + only);
-    if (myGen !== gen || token !== current) return; // stale response, a newer selection took over
+    if (myGen !== gen || token !== current) return; // a newer selection took over
     for (const r of rows) {
       acts.set(r.k, r);
       if (r.seq > lastSeq) lastSeq = r.seq;
     }
-    if (rows.length || reset) renderActivity();
-  } catch (e) {
-    $('err').textContent = e.message;
+    const first = !actLoaded;
+    actLoaded = true;
+    if (rows.length || first) renderActivity();
+  } catch (err) {
+    if (err.kind === 'auth') signOut(err.message);
   }
 }
 
-function pruneQuery() {
+/* ---------- clean up ---------- */
+const dlg = $('cleanup');
+const scope = () => document.querySelector('input[name=scope]:checked').value;
+const sel = () => sessions.find((s) => s.token === current);
+
+function updateCleanup() {
+  const s = sel();
+  const name = s ? (s.cf_handle || 'not connected') + ' (' + s.token + ')' : '';
+  document.querySelectorAll('input[name=scope]').forEach((r) => {
+    if (r.value !== 'all') r.disabled = !s;
+  });
+  if (!s && scope() !== 'all') document.querySelector('input[name=scope][value=all]').checked = true;
+  $('scopeSelName').textContent = s ? name : 'Select a session first.';
+
+  const sc = scope();
   const age = Math.max(parseFloat($('age').value) || 0, 0);
-  return '?older_than_min=' + age + '&keep_flagged=' + ($('keepFlagged').checked ? 1 : 0);
+  const keep = $('keepFlagged').checked;
+  $('opts').hidden = sc === 'session';
+  $('cleanupErr').textContent = '';
+  const btn = $('doCleanup');
+  if (sc === 'session') {
+    $('cleanupSummary').textContent = 'Removes ' + name + ' and every event it recorded. This cannot be undone.';
+    btn.textContent = 'Remove session';
+  } else {
+    const what = age > 0 ? 'events not seen again for ' + age + ' minutes' : 'every event';
+    const where = sc === 'all' ? 'all sessions' : name;
+    $('cleanupSummary').textContent = 'Deletes ' + what + ' from ' + where + '. ' +
+      (keep ? 'Flagged events are kept.' : 'Flagged events are deleted too.') + ' This cannot be undone.';
+    btn.textContent = 'Delete events';
+  }
 }
 
-async function run(confirmText, path, label) {
-  if (!key || !confirm(confirmText)) return;
+$('cleanupBtn').onclick = () => { updateCleanup(); dlg.showModal(); };
+$('cancelCleanup').onclick = () => dlg.close();
+$('cleanupForm').addEventListener('input', updateCleanup);
+
+$('doCleanup').onclick = async () => {
+  const sc = scope();
+  const age = Math.max(parseFloat($('age').value) || 0, 0);
+  const q = '?older_than_min=' + age + '&keep_flagged=' + ($('keepFlagged').checked ? 1 : 0);
+  const btn = $('doCleanup');
+  btn.disabled = true;
   try {
-    const r = await api(path, 'DELETE');
-    notify(label(r));
-    $('err').textContent = '';
+    let note;
+    if (sc === 'session') {
+      const t = current;
+      const r = await api('/api/host/sessions/' + encodeURIComponent(t), 'DELETE');
+      current = null;
+      note = 'Removed the session and ' + r.deleted_events + ' events';
+    } else if (sc === 'events') {
+      const r = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity' + q, 'DELETE');
+      note = 'Deleted ' + r.deleted_events + ' events';
+    } else {
+      const r = await api('/api/host/activity' + q, 'DELETE');
+      note = 'Deleted ' + r.deleted_events + ' events';
+    }
+    dlg.close();
+    toast(note);
+    acts = new Map(); lastSeq = 0; gen++; actLoaded = !!current ? false : true;
+    renderHead(); renderActivity();
     await loadSessions();
     await loadActivity(true);
-  } catch (e) {
-    $('err').textContent = e.message;
+  } catch (err) {
+    if (err.kind === 'auth') { dlg.close(); signOut(err.message); }
+    else $('cleanupErr').textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+/* ---------- polling ---------- */
+async function refresh() {
+  if (busy || !key) return;
+  busy = true;
+  try {
+    await loadSessions();
+    await loadActivity(false);
+  } finally {
+    busy = false;
   }
 }
+setInterval(() => { if (!document.hidden) refresh(); }, POLL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
-$('delSel').onclick = () => {
-  if (!current) return ($('err').textContent = 'select a session first');
-  run('Delete matching events of session ' + current + '?',
-    '/api/host/sessions/' + encodeURIComponent(current) + '/activity' + pruneQuery(),
-    (r) => 'deleted ' + r.deleted_events + ' event(s)');
-};
-$('delAll').onclick = () =>
-  run('Delete matching events of ALL sessions?', '/api/host/activity' + pruneQuery(),
-    (r) => 'deleted ' + r.deleted_events + ' event(s)');
-$('delSession').onclick = () => {
-  if (!current) return ($('err').textContent = 'select a session first');
-  const t = current;
-  run('Remove session ' + t + ' and all its events?', '/api/host/sessions/' + encodeURIComponent(t),
-    (r) => { current = null; return 'removed session, ' + r.deleted_events + ' event(s)'; });
-};
-
-function connect() {
-  key = $('key').value.trim();
-  badKey = false;
-  sessionStorage.setItem('hostKey', key);
-  $('err').textContent = '';
-  loadSessions();
-  loadActivity(true);
+if (key) {
+  showApp();
+  renderHead();
+  renderActivity();
+  refresh();
+} else {
+  showGate('');
 }
-$('go').onclick = connect;
-$('key').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
-$('onlyFlagged').onchange = () => loadActivity(true);
-
-setInterval(() => {
-  if (document.hidden) return;
-  loadSessions();
-  loadActivity(false);
-}, POLL_MS);
-renderActivity();
-loadSessions();
 </script>
 </body>
 </html>
