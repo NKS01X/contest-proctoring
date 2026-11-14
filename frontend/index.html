@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contest Proctoring - Link Session</title>
+    <title>Contest Proctoring - Connect Session</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
     <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 text-center text-gray-800">Contest Registration</h2>
-        <p class="text-gray-600 mb-5 text-sm text-center">Enter your Codeforces Handle and the session code provided by your desktop proctoring client to reveal the contest password.</p>
+        <p class="text-gray-600 mb-5 text-sm text-center">Enter your Codeforces Handle and the session code shown by your desktop proctoring client to connect your session.</p>
 
         <!-- App Download -->
         <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
@@ -59,7 +59,7 @@
             </div>
 
             <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                Get Contest Password
+                Connect
             </button>
         </form>
 
@@ -73,15 +73,31 @@
             ? 'http://localhost:8080' 
             : 'https://contest-proctoring-backend.onrender.com';
 
+        function showBox(kind, text) {
+            const box = document.getElementById('resultBox');
+            const styles = {
+                info: ['text-gray-500', ''],
+                ok: ['text-green-800', 'bg-green-50 border border-green-200 p-4 rounded-md'],
+                err: ['text-red-800', 'bg-red-50 border border-red-200 p-4 rounded-md'],
+            }[kind];
+            box.classList.remove('hidden');
+            box.replaceChildren();
+            const wrap = document.createElement('div');
+            wrap.className = styles[1];
+            const p = document.createElement('p');
+            p.className = 'text-sm text-center font-medium ' + styles[0];
+            p.textContent = text;
+            wrap.append(p);
+            box.append(wrap);
+        }
+
         document.getElementById('linkForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const cfHandle = document.getElementById('cfHandle').value.trim();
             const sessionCode = document.getElementById('sessionCode').value.trim();
-            const resultBox = document.getElementById('resultBox');
 
-            resultBox.classList.remove('hidden');
-            resultBox.innerHTML = '<p class="text-gray-500 text-center text-sm">Verifying active proctoring session...</p>';
+            showBox('info', 'Connecting to your proctoring session...');
 
             try {
                 const response = await fetch(`${BACKEND_URL}/link`, {
@@ -90,31 +106,15 @@
                     body: JSON.stringify({ cf_handle: cfHandle, session_token: sessionCode })
                 });
 
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
 
                 if (response.ok) {
-                    resultBox.innerHTML = `
-                        <div class="bg-green-50 border border-green-200 p-4 rounded-md text-center">
-                            <p class="text-sm text-green-800 font-semibold mb-2">Success! Your contest password is:</p>
-                            <div class="bg-white p-3 rounded border border-green-300 flex items-center justify-center space-x-2">
-                                <span class="text-xl font-mono text-gray-900 tracking-wider font-bold select-all">${data.password}</span>
-                            </div>
-                            <p class="text-xs text-green-600 mt-2">Keep the proctoring app running throughout the contest.</p>
-                        </div>
-                    `;
+                    showBox('ok', `Connected as ${cfHandle}. Keep the proctoring app running throughout the contest.`);
                 } else {
-                    resultBox.innerHTML = `
-                        <div class="bg-red-50 border border-red-200 p-4 rounded-md">
-                            <p class="text-sm text-red-800 text-center font-medium">${data.error || 'Verification failed.'}</p>
-                        </div>
-                    `;
+                    showBox('err', data.error || 'Connection failed.');
                 }
             } catch (error) {
-                resultBox.innerHTML = `
-                    <div class="bg-red-50 border border-red-200 p-4 rounded-md">
-                        <p class="text-sm text-red-800 text-center font-medium">Failed to connect to backend server. Ensure backend is active.</p>
-                    </div>
-                `;
+                showBox('err', 'Failed to reach the backend server. It may be waking up, try again in a few seconds.');
             }
         });
     </script>

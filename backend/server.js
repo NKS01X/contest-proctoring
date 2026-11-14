@@ -7,7 +7,6 @@ const { Pool, types } = require('pg');
 types.setTypeParser(20, (v) => parseInt(v, 10)); // BIGINT / COUNT -> number
 
 const PORT = process.env.PORT || 8080;
-const CONTEST_PASSWORD = process.env.CONTEST_PASSWORD;
 const HOST_KEY = process.env.HOST_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
 // Optional auto-prune: delete events not seen again for this many hours (0 = off).
@@ -31,8 +30,8 @@ const TYPES = {
 };
 const TYPE_NAMES = Object.fromEntries(Object.entries(TYPES).map(([k, v]) => [v, k]));
 
-if (!CONTEST_PASSWORD || !HOST_KEY || !DATABASE_URL) {
-    console.error('FATAL: CONTEST_PASSWORD, HOST_KEY and DATABASE_URL must be set.');
+if (!HOST_KEY || !DATABASE_URL) {
+    console.error('FATAL: HOST_KEY and DATABASE_URL must be set.');
     process.exit(1);
 }
 
@@ -251,6 +250,7 @@ const handleActivity = wrap(async (req, res) => {
 app.post('/activity', handleActivity);
 app.post('/heartbeat', handleActivity);
 
+// Connects a Codeforces handle to a running proctoring session.
 app.post('/link', wrap(async (req, res) => {
     const { cf_handle, session_token } = req.body || {};
     if (!cf_handle || !session_token) {
@@ -266,9 +266,9 @@ app.post('/link', wrap(async (req, res) => {
     }
 
     await pool.query('UPDATE proctor.sessions SET cf_handle = $1 WHERE token = $2', [String(cf_handle).slice(0, 64), String(session_token)]);
-    console.log(`[LINK] CF Handle: ${cf_handle} paired with Session: ${session_token}`);
+    console.log(`[LINK] CF Handle: ${cf_handle} connected with Session: ${session_token}`);
 
-    res.json({ success: true, password: CONTEST_PASSWORD, message: 'Successfully paired.' });
+    res.json({ success: true, message: 'Connected.' });
 }));
 
 // ---- Host API ----
