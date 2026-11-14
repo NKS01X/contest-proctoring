@@ -14,6 +14,18 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const ONLINE_MS = 35000;
 const MAX_BATCH = 1000;
 const MAX_DESC = 4000;
+const MAX_STR_CACHE = 50000;
+
+const TYPES = {
+    process_snapshot: 1,
+    process_start: 2,
+    process_stop: 3,
+    window: 4,
+    session_start: 5,
+    session_end: 6,
+    linked: 7,
+};
+const TYPE_NAMES = Object.fromEntries(Object.entries(TYPES).map(([k, v]) => [v, k]));
 
 if (!CONTEST_PASSWORD || !HOST_KEY || !DATABASE_URL) {
     console.error('FATAL: CONTEST_PASSWORD, HOST_KEY and DATABASE_URL must be set.');
@@ -37,21 +49,85 @@ async function initDb() {
             first_seen BIGINT NOT NULL,
             last_seen  BIGINT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS proctor.activities (
-            seq         BIGSERIAL PRIMARY KEY,
-            token       TEXT NOT NULL,
-            event_id    TEXT NOT NULL,
-            ts          BIGINT NOT NULL,
-            type        TEXT NOT NULL,
-            description TEXT NOT NULL,
-            flagged     INTEGER NOT NULL DEFAULT 0,
-            UNIQUE (token, event_id)
+        ALTER TABLE proctor.sessions ADD COLUMN IF NOT EXISTS total   INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE proctor.sessions ADD COLUMN IF NOT EXISTS flagged INTEGER NOT NULL DEFAULT 0;
+
+        -- every distinct description is stored exactly once
+        CREATE TABLE IF NOT EXISTS proctor.strings (
+            id  SERIAL PRIMARY KEY,
+            h   TEXT NOT NULL UNIQUE,
+            txt TEXT NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS idx_activities_token_seq ON proctor.activities (token, seq);
+
+        CREATE TABLE IF NOT EXISTS proctor.events (
+            token   TEXT NOT NULL,
+            n       INTEGER NOT NULL,
+            ts      BIGINT NOT NULL,
+            type    SMALLINT NOT NULL,
+            sid     INTEGER NOT NULL,
+            flagged SMALLINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (token, n)
+        );
     `);
 }
 
+const md5 = (s) => crypto.createHash('md5').update(s).digest('hex');
+const strCache = new Map(); // md5 -> strings.id
+
+// Returns the strings.id for each text, inserting only texts never seen before.
+async function internStrings(texts) {
+    if (strCache.size > MAX_STR_CACHE) strCache.clear();
+
+    const missing = new Map();
+    for (const t of texts) {
+        const h = md5(t);
+        if (!strCache.has(h)) missing.set(h, t);
+    }
+
+    if (missing.size) {
+        const hs = [...missing.keys()];
+        const { rows } = await pool.query(
+            `WITH ins AS (
+                 INSERT INTO proctor.strings (h, txt)
+                 SELECT * FROM unnest($1::text[], $2::text[])
+                 ON CONFLICT (h) DO NOTHING
+                 RETURNING id, h
+             )
+             SELECT id, h FROM ins
+             UNION ALL
+             SELECT id, h FROM proctor.strings WHERE h = ANY($1::text[])`,
+            [hs, [...missing.values()]]
+        );
+        for (const r of rows) strCache.set(r.h, r.id);
+
+        // a concurrent request may have inserted the same string after our snapshot
+        const lost = hs.filter((h) => !strCache.has(h));
+        if (lost.length) {
+            const again = await pool.query('SELECT id, h FROM proctor.strings WHERE h = ANY($1::text[])', [lost]);
+            for (const r of again.rows) strCache.set(r.h, r.id);
+        }
+    }
+    return texts.map((t) => strCache.get(md5(t)));
+}
+
 async function ingest(token, items, now) {
+    const evs = [];
+    for (const a of items) {
+        if (!a || typeof a.id !== 'string' || typeof a.type !== 'string') continue;
+        const type = TYPES[a.type];
+        const n = parseInt(a.id.slice(a.id.lastIndexOf('-') + 1), 10);
+        if (!type || !Number.isInteger(n)) continue;
+        evs.push({
+            n,
+            type,
+            ts: Date.parse(a.timestamp) || now,
+            desc: String(a.description ?? '').slice(0, MAX_DESC),
+            flagged: a.flagged ? 1 : 0,
+        });
+    }
+
+    const sids = evs.length ? await internStrings(evs.map((e) => e.desc)) : [];
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -61,24 +137,21 @@ async function ingest(token, items, now) {
             [token, now]
         );
 
-        const ids = [], tss = [], types_ = [], descs = [], flags = [];
-        for (const a of items) {
-            if (!a || typeof a.id !== 'string' || typeof a.type !== 'string') continue;
-            ids.push(a.id.slice(0, 80));
-            tss.push(Date.parse(a.timestamp) || now);
-            types_.push(a.type.slice(0, 64));
-            descs.push(String(a.description ?? '').slice(0, MAX_DESC));
-            flags.push(a.flagged ? 1 : 0);
-        }
-
-        if (ids.length) {
+        if (evs.length) {
             await client.query(
-                `INSERT INTO proctor.activities (token, event_id, ts, type, description, flagged)
-                 SELECT $1, * FROM unnest($2::text[], $3::bigint[], $4::text[], $5::text[], $6::int[])
-                 ON CONFLICT (token, event_id) DO NOTHING`,
-                [token, ids, tss, types_, descs, flags]
+                `WITH ins AS (
+                     INSERT INTO proctor.events (token, n, ts, type, sid, flagged)
+                     SELECT $1, * FROM unnest($2::int[], $3::bigint[], $4::smallint[], $5::int[], $6::smallint[])
+                     ON CONFLICT DO NOTHING
+                     RETURNING flagged
+                 )
+                 UPDATE proctor.sessions SET
+                     total   = total + (SELECT COUNT(*) FROM ins),
+                     flagged = flagged + (SELECT COALESCE(SUM(flagged), 0) FROM ins)
+                 WHERE token = $1`,
+                [token, evs.map((e) => e.n), evs.map((e) => e.ts), evs.map((e) => e.type), sids, evs.map((e) => e.flagged)]
             );
-            const nFlagged = flags.reduce((s, f) => s + f, 0);
+            const nFlagged = evs.reduce((s, e) => s + e.flagged, 0);
             if (nFlagged) console.log(`[FLAGGED] Token: ${token} | ${nFlagged} flagged event(s) in batch`);
         }
         await client.query('COMMIT');
@@ -143,30 +216,26 @@ function requireHost(req, res, next) {
 }
 
 app.get('/api/host/sessions', requireHost, wrap(async (req, res) => {
-    const { rows } = await pool.query(`
-        SELECT s.token, s.cf_handle, s.first_seen, s.last_seen,
-               COUNT(a.seq) AS total,
-               COALESCE(SUM(a.flagged), 0) AS flagged
-        FROM proctor.sessions s LEFT JOIN proctor.activities a ON a.token = s.token
-        GROUP BY s.token
-        ORDER BY s.last_seen DESC
-    `);
+    const { rows } = await pool.query(
+        'SELECT token, cf_handle, first_seen, last_seen, total, flagged FROM proctor.sessions ORDER BY last_seen DESC'
+    );
     const now = Date.now();
-    res.json(rows.map((r) => ({ ...r, total: Number(r.total), flagged: Number(r.flagged), online: now - r.last_seen < ONLINE_MS })));
+    res.json(rows.map((r) => ({ ...r, online: now - r.last_seen < ONLINE_MS })));
 }));
 
 // Newest first. Use ?after=<seq> to fetch only rows newer than a known seq.
 app.get('/api/host/sessions/:token/activity', requireHost, wrap(async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
     const after = parseInt(req.query.after, 10) || 0;
-    const flaggedOnly = req.query.flagged === '1' ? 'AND flagged = 1' : '';
+    const flaggedOnly = req.query.flagged === '1' ? 'AND e.flagged = 1' : '';
     const { rows } = await pool.query(
-        `SELECT seq, ts, type, description, flagged FROM proctor.activities
-         WHERE token = $1 AND seq > $2 ${flaggedOnly}
-         ORDER BY seq DESC LIMIT $3`,
+        `SELECT e.n AS seq, e.ts, e.type, s.txt AS description, e.flagged
+         FROM proctor.events e JOIN proctor.strings s ON s.id = e.sid
+         WHERE e.token = $1 AND e.n > $2 ${flaggedOnly}
+         ORDER BY e.n DESC LIMIT $3`,
         [req.params.token, after, limit]
     );
-    res.json(rows);
+    res.json(rows.map((r) => ({ ...r, type: TYPE_NAMES[r.type] || 'unknown' })));
 }));
 
 app.get('/host', (req, res) => {

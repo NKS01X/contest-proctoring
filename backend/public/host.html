@@ -44,8 +44,12 @@
   </div>
 </div>
 <script>
+const POLL_MS = 10000;
+const MAX_ROWS = 1000;
 let key = sessionStorage.getItem('hostKey') || '';
 let current = null;
+let acts = [];
+let lastSeq = 0;
 const $ = (id) => document.getElementById(id);
 
 async function api(path) {
@@ -70,7 +74,7 @@ async function loadSessions() {
     for (const s of rows) {
       const tr = document.createElement('tr');
       tr.className = 's';
-      tr.onclick = () => { current = s.token; loadActivity(); };
+      tr.onclick = () => { current = s.token; loadActivity(true); };
       tr.append(
         cell(s.online ? '\u25cf' : '\u25cb', s.online ? 'on' : 'off'),
         cell(s.cf_handle || '(unlinked)'),
@@ -87,19 +91,29 @@ async function loadSessions() {
   }
 }
 
-async function loadActivity() {
+function renderActivity() {
+  const body = $('abody');
+  body.replaceChildren();
+  for (const a of acts) {
+    const tr = document.createElement('tr');
+    if (a.flagged) tr.className = 'flagged';
+    tr.append(cell(new Date(a.ts).toLocaleTimeString()), cell(a.type), cell(a.description, 'desc'));
+    body.append(tr);
+  }
+}
+
+// Only fetches rows newer than lastSeq; reset=true reloads from scratch.
+async function loadActivity(reset) {
   if (!key || !current) return;
+  if (reset) { acts = []; lastSeq = 0; }
   try {
     const only = $('onlyFlagged').checked ? '&flagged=1' : '';
-    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=300' + only);
-    const body = $('abody');
-    body.replaceChildren();
-    for (const a of rows) {
-      const tr = document.createElement('tr');
-      if (a.flagged) tr.className = 'flagged';
-      tr.append(cell(new Date(a.ts).toLocaleTimeString()), cell(a.type), cell(a.description, 'desc'));
-      body.append(tr);
+    const rows = await api('/api/host/sessions/' + encodeURIComponent(current) + '/activity?limit=300&after=' + lastSeq + only);
+    if (rows.length) {
+      lastSeq = rows[0].seq;
+      acts = rows.concat(acts).slice(0, MAX_ROWS);
     }
+    if (rows.length || reset) renderActivity();
   } catch (e) {
     $('err').textContent = e.message;
   }
@@ -110,8 +124,12 @@ $('go').onclick = () => {
   sessionStorage.setItem('hostKey', key);
   loadSessions();
 };
-$('onlyFlagged').onchange = loadActivity;
-setInterval(() => { loadSessions(); loadActivity(); }, 5000);
+$('onlyFlagged').onchange = () => loadActivity(true);
+setInterval(() => {
+  if (document.hidden) return;
+  loadSessions();
+  loadActivity(false);
+}, POLL_MS);
 loadSessions();
 </script>
 </body>

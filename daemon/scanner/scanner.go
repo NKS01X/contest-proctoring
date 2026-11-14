@@ -8,10 +8,14 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
-const maxSnapshotLen = 4000
+const (
+	maxSnapshotLen = 4000
+	maxTitleLen    = 160
+	titleCooldown  = 15 * time.Second
+)
 
 // Activity is one recorded event. Type is one of:
-// process_snapshot, process_start, process_stop, window.
+// process_snapshot, process_start, window.
 type Activity struct {
 	Timestamp   time.Time `json:"timestamp"`
 	Type        string    `json:"type"`
@@ -42,6 +46,13 @@ func matches(s string, list []string) bool {
 	return false
 }
 
+func clip(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
 func processNames() map[string]struct{} {
 	procs, err := process.Processes()
 	if err != nil {
@@ -56,10 +67,13 @@ func processNames() map[string]struct{} {
 	return set
 }
 
-// Poll records every active-window change and every process start/stop.
-// The first scan emits a snapshot of running processes as the baseline.
+// Poll records window changes and process starts, keeping only new information:
+// each process name is reported once (flagged ones every time), process stops are
+// not reported, and a window title is not repeated within titleCooldown.
 func Poll(interval time.Duration, out chan<- Activity) {
 	var prev map[string]struct{}
+	seen := map[string]struct{}{}
+	emitted := map[string]time.Time{}
 	lastTitle := ""
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -72,6 +86,7 @@ func Poll(interval time.Duration, out chan<- Activity) {
 				names := make([]string, 0, len(cur))
 				for n := range cur {
 					names = append(names, n)
+					seen[n] = struct{}{}
 				}
 				sort.Strings(names)
 				snap := strings.Join(names, ", ")
@@ -86,22 +101,26 @@ func Poll(interval time.Duration, out chan<- Activity) {
 				}
 			} else {
 				for n := range cur {
-					if _, ok := prev[n]; !ok {
-						out <- Activity{Timestamp: now, Type: "process_start", Description: n, Flagged: matches(n, ProcessBlacklist)}
+					if _, ok := prev[n]; ok {
+						continue
 					}
-				}
-				for n := range prev {
-					if _, ok := cur[n]; !ok {
-						out <- Activity{Timestamp: now, Type: "process_stop", Description: n}
+					flagged := matches(n, ProcessBlacklist)
+					if _, ok := seen[n]; !ok || flagged {
+						out <- Activity{Timestamp: now, Type: "process_start", Description: n, Flagged: flagged}
 					}
+					seen[n] = struct{}{}
 				}
 			}
 			prev = cur
 		}
 
-		if title := GetActiveWindowTitle(); title != "" && title != lastTitle {
+		if title := clip(GetActiveWindowTitle(), maxTitleLen); title != "" && title != lastTitle {
 			lastTitle = title
-			out <- Activity{Timestamp: now, Type: "window", Description: title, Flagged: matches(title, WindowBlacklist)}
+			flagged := matches(title, WindowBlacklist)
+			if last, ok := emitted[title]; !ok || flagged || now.Sub(last) > titleCooldown {
+				emitted[title] = now
+				out <- Activity{Timestamp: now, Type: "window", Description: title, Flagged: flagged}
+			}
 		}
 
 		<-ticker.C
